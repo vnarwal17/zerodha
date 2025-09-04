@@ -252,14 +252,16 @@ serve(async (req) => {
                 const lines = instrumentsText.split('\n')
                 console.log('Number of lines:', lines.length)
                 
-                // Parse CSV data
-                for (let i = 1; i < lines.length && instruments.length < 200; i++) {
+                // Parse CSV data - Include all NSE equity instruments
+                for (let i = 1; i < lines.length && instruments.length < 500; i++) {
                   const cols = lines[i].split(',')
                   if (cols.length >= 8) {
                     const symbol = cols[2]?.replace(/"/g, '')
                     const exchange = cols[11]?.replace(/"/g, '')
+                    const instrumentType = cols[9]?.replace(/"/g, '')
                     
-                    if (exchange === 'NSE' && symbol && (nifty50Stocks.includes(symbol) || bankniftyStocks.includes(symbol))) {
+                    // Include all NSE equity instruments (stocks)
+                    if (exchange === 'NSE' && instrumentType === 'EQ' && symbol && symbol.length > 0) {
                       instruments.push({
                         symbol: symbol,
                         instrument_token: parseInt(cols[0]) || 0,
