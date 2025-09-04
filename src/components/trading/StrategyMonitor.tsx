@@ -216,18 +216,6 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
           )}
         </div>
 
-        <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-          <h5 className="font-medium text-blue-900 mb-2">Your Intraday Strategy Rules:</h5>
-          <ul className="text-sm text-blue-700 space-y-1">
-            <li>• 50-period SMA on 3-minute candles</li>
-            <li>• 10 AM setup: Entire candle must be strictly above/below SMA</li>
-            <li>• Rejection candle: Wick touches SMA, body stays on setup side</li>
-            <li>• 2-candle skip period after rejection</li>
-            <li>• Entry: Rejection High/Low ± 0.10, SL: ± 0.15</li>
-            <li>• Target: 5:1 Risk/Reward ratio</li>
-            <li>• Trading window: 10 AM - 1 PM, Force exit at 3 PM</li>
-          </ul>
-        </div>
       </CardContent>
     </Card>
   );
