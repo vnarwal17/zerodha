@@ -203,11 +203,24 @@ serve(async (req) => {
         break
 
       case '/instruments':
-          // Mock instruments data
+        const { data: instrumentsSessionData } = await supabaseClient
+          .from('trading_sessions')
+          .select('access_token')
+          .eq('id', 1)
+          .maybeSingle()
+
+        const { data: instrumentsApiKeyData } = await supabaseClient
+          .from('trading_credentials')
+          .select('api_key')
+          .eq('id', 1)
+          .maybeSingle()
+
+        if (!instrumentsSessionData?.access_token || !instrumentsApiKeyData?.api_key) {
+          // Return limited mock data if not authenticated
           const mockInstruments = [
-            { symbol: "RELIANCE", instrument_token: 738561, exchange: "NSE" },
-            { symbol: "TCS", instrument_token: 2953217, exchange: "NSE" },
-            { symbol: "HDFC", instrument_token: 340481, exchange: "NSE" },
+            { symbol: "RELIANCE", instrument_token: 738561, exchange: "NSE", name: "Reliance Industries Ltd.", is_nifty50: true, is_banknifty: false },
+            { symbol: "TCS", instrument_token: 2953217, exchange: "NSE", name: "Tata Consultancy Services Ltd.", is_nifty50: true, is_banknifty: false },
+            { symbol: "HDFC", instrument_token: 340481, exchange: "NSE", name: "HDFC Bank Ltd.", is_nifty50: true, is_banknifty: false },
           ]
 
           return Response.json({
@@ -219,6 +232,79 @@ serve(async (req) => {
               count: mockInstruments.length
             }
           }, { headers: corsHeaders })
+        }
+
+        try {
+          // Fetch real instruments from Zerodha API
+          const instrumentsResponse = await fetch(`${KITE_API_BASE}/instruments`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `token ${instrumentsApiKeyData.api_key}:${instrumentsSessionData.access_token}`,
+              'X-Kite-Version': '3'
+            }
+          })
+
+          if (instrumentsResponse.ok) {
+            const instrumentsText = await instrumentsResponse.text()
+            const lines = instrumentsText.split('\n')
+            const headers = lines[0].split(',')
+            
+            // Parse CSV data
+            const instruments = []
+            const nifty50Stocks = ["RELIANCE", "TCS", "HDFCBANK", "INFY", "HINDUNILVR", "HDFC", "ICICIBANK", "KOTAKBANK", "BHARTIARTL", "ITC", "SBIN", "BAJFINANCE", "ASIANPAINT", "MARUTI", "HCLTECH", "AXISBANK", "LT", "DMART", "SUNPHARMA", "TITAN", "ULTRACEMCO", "NESTLEIND", "WIPRO", "NTPC", "JSWSTEEL", "TECHM", "TATAMOTORS", "INDUSINDBK", "POWERGRID", "BAJAJFINSV", "GRASIM", "ADANIENT", "COALINDIA", "HEROMOTOCO", "CIPLA", "EICHERMOT", "BRITANNIA", "DIVISLAB", "DRREDDY", "APOLLOHOSP", "TATACONSUM", "UPL", "BAJAJ-AUTO", "HINDALCO", "ONGC", "SBILIFE", "BPCL", "TATASTEEL", "HDFCLIFE", "ADANIPORTS"]
+            const bankniftyStocks = ["HDFCBANK", "ICICIBANK", "KOTAKBANK", "SBIN", "AXISBANK", "INDUSINDBK", "BAJFINANCE", "BAJAJFINSV", "PNB", "BANKBARODA", "AUBANK", "IDFCFIRSTB"]
+
+            for (let i = 1; i < lines.length && i <= 1000; i++) { // Limit to first 1000 for performance
+              const cols = lines[i].split(',')
+              if (cols.length >= 8) {
+                const symbol = cols[2]?.replace(/"/g, '')
+                const exchange = cols[11]?.replace(/"/g, '')
+                
+                if (exchange === 'NSE' && symbol) {
+                  instruments.push({
+                    symbol: symbol,
+                    instrument_token: parseInt(cols[0]) || 0,
+                    exchange: exchange,
+                    name: cols[1]?.replace(/"/g, '') || symbol,
+                    is_nifty50: nifty50Stocks.includes(symbol),
+                    is_banknifty: bankniftyStocks.includes(symbol)
+                  })
+                }
+              }
+            }
+
+            return Response.json({
+              status: "success",
+              data: {
+                instruments: instruments.slice(0, 500), // Return top 500 for UI performance
+                nifty50_stocks: nifty50Stocks,
+                banknifty_stocks: bankniftyStocks,
+                count: instruments.length
+              }
+            }, { headers: corsHeaders })
+          } else {
+            throw new Error('Failed to fetch instruments')
+          }
+        } catch (error) {
+          // Fallback to enhanced mock data if API fails
+          const mockInstruments = [
+            { symbol: "RELIANCE", instrument_token: 738561, exchange: "NSE", name: "Reliance Industries Ltd.", is_nifty50: true, is_banknifty: false },
+            { symbol: "TCS", instrument_token: 2953217, exchange: "NSE", name: "Tata Consultancy Services Ltd.", is_nifty50: true, is_banknifty: false },
+            { symbol: "HDFCBANK", instrument_token: 341249, exchange: "NSE", name: "HDFC Bank Ltd.", is_nifty50: true, is_banknifty: true },
+            { symbol: "INFY", instrument_token: 408065, exchange: "NSE", name: "Infosys Ltd.", is_nifty50: true, is_banknifty: false },
+            { symbol: "ICICIBANK", instrument_token: 1270529, exchange: "NSE", name: "ICICI Bank Ltd.", is_nifty50: true, is_banknifty: true },
+          ]
+
+          return Response.json({
+            status: "success",
+            data: {
+              instruments: mockInstruments,
+              nifty50_stocks: ["RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK"],
+              banknifty_stocks: ["HDFCBANK", "ICICIBANK", "SBIN", "KOTAKBANK"],
+              count: mockInstruments.length
+            }
+          }, { headers: corsHeaders })
+        }
         break
 
       case '/start_live_trading':
