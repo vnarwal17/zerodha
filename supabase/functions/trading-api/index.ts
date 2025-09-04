@@ -48,7 +48,7 @@ serve(async (req) => {
           }
 
           // Store credentials securely in Supabase
-          const { error } = await supabaseClient
+          const { error: credentialsError } = await supabaseClient
             .from('trading_credentials')
             .upsert({
               id: 1,
@@ -57,10 +57,10 @@ serve(async (req) => {
               updated_at: new Date().toISOString()
             })
 
-          if (error) {
+          if (credentialsError) {
             return Response.json({
               status: "error",
-              message: error.message
+              message: credentialsError.message
             }, { headers: corsHeaders })
           }
 
@@ -115,7 +115,7 @@ serve(async (req) => {
 
             if (tokenResponse.ok && tokenData.status === 'success') {
               // Store access token and user data
-              const { error } = await supabaseClient
+              const { error: sessionError } = await supabaseClient
                 .from('trading_sessions')
                 .upsert({
                   id: 1,
@@ -127,10 +127,10 @@ serve(async (req) => {
                   updated_at: new Date().toISOString()
                 })
 
-              if (error) {
+              if (sessionError) {
                 return Response.json({
                   status: "error",
-                  message: error.message
+                  message: sessionError.message
                 }, { headers: corsHeaders })
               }
 
@@ -225,7 +225,7 @@ serve(async (req) => {
         const { symbols } = requestData
           
           // Store trading session
-          const { error } = await supabaseClient
+          const { error: tradingError } = await supabaseClient
             .from('trading_sessions')
             .upsert({
               id: 1,
@@ -234,10 +234,10 @@ serve(async (req) => {
               updated_at: new Date().toISOString()
             })
 
-          if (error) {
+          if (tradingError) {
             return Response.json({
               status: "error",
-              message: error.message
+              message: tradingError.message
             }, { headers: corsHeaders })
           }
 
@@ -249,7 +249,7 @@ serve(async (req) => {
         break
 
       case '/stop_live_trading':
-          const { error } = await supabaseClient
+          const { error: stopError } = await supabaseClient
             .from('trading_sessions')
             .upsert({
               id: 1,
@@ -257,10 +257,10 @@ serve(async (req) => {
               updated_at: new Date().toISOString()
             })
 
-          if (error) {
+          if (stopError) {
             return Response.json({
               status: "error",
-              message: error.message
+              message: stopError.message
             }, { headers: corsHeaders })
           }
 
@@ -295,7 +295,7 @@ serve(async (req) => {
       case '/update_settings':
         const settings = requestData
           
-          const { error } = await supabaseClient
+          const { error: settingsError } = await supabaseClient
             .from('trading_settings')
             .upsert({
               id: 1,
@@ -303,10 +303,10 @@ serve(async (req) => {
               updated_at: new Date().toISOString()
             })
 
-          if (error) {
+          if (settingsError) {
             return Response.json({
               status: "error",
-              message: error.message
+              message: settingsError.message
             }, { headers: corsHeaders })
           }
 
