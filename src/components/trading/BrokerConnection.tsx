@@ -3,8 +3,9 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Wifi, WifiOff, LogIn, User, AlertCircle, CheckCircle, Link as LinkIcon } from "lucide-react";
+import { Wifi, WifiOff, LogIn, User, AlertCircle, CheckCircle, Link as LinkIcon, Key, Eye, EyeOff, ExternalLink, Settings } from "lucide-react";
 import { useState, useEffect } from "react";
 import { tradingApi } from "@/services/trading-api";
 import { useToast } from "@/hooks/use-toast";
@@ -20,6 +21,14 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
   const [loginUrl, setLoginUrl] = useState("");
   const [userInfo, setUserInfo] = useState<any>(null);
   const [showConnectionModal, setShowConnectionModal] = useState(false);
+  const [showCredentialsSetup, setShowCredentialsSetup] = useState(false);
+  
+  // Credentials state
+  const [apiKey, setApiKey] = useState("");
+  const [apiSecret, setApiSecret] = useState("");
+  const [showSecret, setShowSecret] = useState(false);
+  const [credentialsSet, setCredentialsSet] = useState(false);
+  
   const { toast } = useToast();
 
   useEffect(() => {
@@ -137,6 +146,56 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
     setLoginUrl("");
   };
 
+  const handleCredentialsSubmit = async () => {
+    if (!apiKey.trim() || !apiSecret.trim()) {
+      toast({
+        title: "Missing Credentials",
+        description: "Please enter both API key and secret",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/set_credentials", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          api_key: apiKey,
+          api_secret: apiSecret,
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.status === "success") {
+        toast({
+          title: "Credentials Set",
+          description: "API credentials configured successfully",
+        });
+        setCredentialsSet(true);
+        setShowCredentialsSetup(false);
+      } else {
+        toast({
+          title: "Error",
+          description: data.message || "Failed to set credentials",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Connection Error",
+        description: "Failed to connect to backend server",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <>
       <Card>
@@ -195,21 +254,53 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
             </div>
           ) : (
             <div className="space-y-4">
-              <Button
-                onClick={handleConnectClick}
-                disabled={loading}
-                className="w-full"
-              >
-                <LogIn className="h-4 w-4 mr-2" />
-                {loading ? "Connecting..." : "Connect to Zerodha"}
-              </Button>
+              {!credentialsSet ? (
+                <div className="space-y-4">
+                  <Button
+                    onClick={() => setShowCredentialsSetup(true)}
+                    disabled={loading}
+                    className="w-full"
+                  >
+                    <Key className="h-4 w-4 mr-2" />
+                    Setup API Credentials
+                  </Button>
+                  
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      First, set up your Zerodha API credentials to enable trading. You'll need API Key and Secret from Zerodha Console.
+                    </AlertDescription>
+                  </Alert>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <Button
+                    onClick={handleConnectClick}
+                    disabled={loading}
+                    className="w-full"
+                  >
+                    <LogIn className="h-4 w-4 mr-2" />
+                    {loading ? "Connecting..." : "Connect to Zerodha"}
+                  </Button>
 
-              <Alert>
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                  Connect to your Zerodha account to enable live trading. Your credentials are secure and handled directly by Zerodha's API.
-                </AlertDescription>
-              </Alert>
+                  <Button
+                    onClick={() => setShowCredentialsSetup(true)}
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                  >
+                    <Settings className="h-4 w-4 mr-2" />
+                    Update Credentials
+                  </Button>
+
+                  <Alert>
+                    <CheckCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      API credentials configured. Click "Connect to Zerodha" to authenticate and start trading.
+                    </AlertDescription>
+                  </Alert>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
@@ -266,6 +357,111 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
                 {loading ? "Connecting..." : "🔗 Connect"}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Credentials Setup Modal */}
+      <Dialog open={showCredentialsSetup} onOpenChange={setShowCredentialsSetup}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <Key className="h-5 w-5" />
+              <span>Zerodha API Setup</span>
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <Alert>
+              <ExternalLink className="h-4 w-4" />
+              <AlertDescription>
+                <div className="space-y-2">
+                  <p>Get your API credentials from Zerodha Console:</p>
+                  <a 
+                    href="https://kite.trade" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline font-medium"
+                  >
+                    https://kite.trade
+                  </a>
+                  <p className="text-xs text-muted-foreground">
+                    Create an app to get your API key and secret
+                  </p>
+                </div>
+              </AlertDescription>
+            </Alert>
+
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="api_key">API Key</Label>
+                <Input
+                  id="api_key"
+                  type="text"
+                  placeholder="Enter your Zerodha API key"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  className="font-mono"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="api_secret">API Secret</Label>
+                <div className="relative">
+                  <Input
+                    id="api_secret"
+                    type={showSecret ? "text" : "password"}
+                    placeholder="Enter your Zerodha API secret"
+                    value={apiSecret}
+                    onChange={(e) => setApiSecret(e.target.value)}
+                    className="font-mono pr-10"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                    onClick={() => setShowSecret(!showSecret)}
+                  >
+                    {showSecret ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex space-x-3">
+              <Button
+                variant="outline"
+                onClick={() => setShowCredentialsSetup(false)}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCredentialsSubmit}
+                disabled={loading || !apiKey.trim() || !apiSecret.trim()}
+                className="flex-1"
+              >
+                {loading ? "Setting up..." : "Save Credentials"}
+              </Button>
+            </div>
+
+            <Alert>
+              <AlertDescription>
+                <div className="space-y-1">
+                  <p className="font-medium">Security Notes:</p>
+                  <p className="text-xs text-muted-foreground">
+                    • Credentials are stored securely in the backend<br/>
+                    • Never share your API credentials with anyone<br/>
+                    • You can revoke access anytime from Zerodha Console
+                  </p>
+                </div>
+              </AlertDescription>
+            </Alert>
           </div>
         </DialogContent>
       </Dialog>
