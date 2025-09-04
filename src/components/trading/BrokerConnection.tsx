@@ -25,8 +25,8 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
   const [showBackendError, setShowBackendError] = useState(false);
   
   // Credentials state
-  const [apiKey, setApiKey] = useState("");
-  const [apiSecret, setApiSecret] = useState("");
+  const [apiKey, setApiKey] = useState("graf84f2wec04nbl");
+  const [apiSecret, setApiSecret] = useState("rcaxwf44jd6en5yujwzgmm36hbwbffz6");
   const [showSecret, setShowSecret] = useState(false);
   const [credentialsSet, setCredentialsSet] = useState(false);
   
