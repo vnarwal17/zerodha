@@ -10,8 +10,16 @@ logger = logging.getLogger(__name__)
 
 class ZerodhaClient:
     def __init__(self):
-        self.api_key = "your_zerodha_api_key"  # Replace with your API key
-        self.api_secret = "your_zerodha_api_secret"  # Replace with your API secret
+        # Try to get API credentials from environment variables first
+        self.api_key = os.getenv('ZERODHA_API_KEY', 'your_zerodha_api_key')
+        self.api_secret = os.getenv('ZERODHA_API_SECRET', 'your_zerodha_api_secret')
+        
+        # If no environment variables, try to load from config file
+        if self.api_key == 'your_zerodha_api_key':
+            self._load_config()
+        
+        if self.api_key == 'your_zerodha_api_key' or self.api_secret == 'your_zerodha_api_secret':
+            logger.warning("Using placeholder API credentials. Please set ZERODHA_API_KEY and ZERODHA_API_SECRET environment variables or create zerodha_config.json")
         self.kite = KiteConnect(api_key=self.api_key)
         self.access_token = None
         self.user_id = None
@@ -20,6 +28,25 @@ class ZerodhaClient:
         
         # Load saved token if exists and valid
         self._load_saved_token()
+    
+    def _load_config(self):
+        """Load API credentials from config file"""
+        try:
+            if os.path.exists('zerodha_config.json'):
+                with open('zerodha_config.json', 'r') as f:
+                    config = json.load(f)
+                    self.api_key = config.get('api_key', self.api_key)
+                    self.api_secret = config.get('api_secret', self.api_secret)
+                    logger.info("Loaded API credentials from config file")
+        except Exception as e:
+            logger.error(f"Error loading config: {e}")
+    
+    def set_credentials(self, api_key: str, api_secret: str):
+        """Set API credentials at runtime"""
+        self.api_key = api_key
+        self.api_secret = api_secret
+        self.kite = KiteConnect(api_key=self.api_key)
+        logger.info("API credentials updated")
     
     def _load_saved_token(self):
         """Load saved access token if it exists and is valid"""

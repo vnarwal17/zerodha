@@ -31,6 +31,28 @@ app.add_middleware(
 zerodha_client = ZerodhaClient()
 trading_engine = TradingEngine(zerodha_client)
 
+@app.post("/api/set_credentials")
+async def set_credentials(request: dict):
+    """Set Zerodha API credentials"""
+    try:
+        api_key = request.get('api_key')
+        api_secret = request.get('api_secret')
+        
+        if not api_key or not api_secret:
+            return ApiResponse(
+                status="error",
+                message="Both API key and secret are required"
+            )
+        
+        zerodha_client.set_credentials(api_key, api_secret)
+        return ApiResponse(
+            status="success",
+            message="Credentials updated successfully"
+        )
+    except Exception as e:
+        logger.error(f"Set credentials error: {str(e)}")
+        return ApiResponse(status="error", message=str(e))
+
 @app.post("/api/login")
 async def login(request: LoginRequest):
     """Handle Zerodha login with request token"""

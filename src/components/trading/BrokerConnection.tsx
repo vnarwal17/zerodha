@@ -8,6 +8,7 @@ import { Wifi, WifiOff, LogIn, User, AlertCircle, CheckCircle } from "lucide-rea
 import { useState, useEffect } from "react";
 import { tradingApi } from "@/services/trading-api";
 import { useToast } from "@/hooks/use-toast";
+import { CredentialsSetup } from "./CredentialsSetup";
 
 interface BrokerConnectionProps {
   isConnected: boolean;
@@ -19,6 +20,7 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
   const [requestToken, setRequestToken] = useState("");
   const [loginUrl, setLoginUrl] = useState("");
   const [userInfo, setUserInfo] = useState<any>(null);
+  const [showCredentialsSetup, setShowCredentialsSetup] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -58,6 +60,14 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
           title: "Login Window Opened",
           description: "Complete login and copy the request token from the redirect URL",
         });
+      } else if (response.message && response.message.includes('placeholder')) {
+        // Show credentials setup if using placeholder credentials
+        setShowCredentialsSetup(true);
+        toast({
+          title: "API Credentials Required",
+          description: "Please set up your Zerodha API credentials first",
+          variant: "destructive",
+        });
       } else {
         toast({
           title: "Error",
@@ -68,7 +78,7 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
     } catch (error) {
       toast({
         title: "Connection Error",
-        description: "Failed to connect to trading platform",
+        description: "Failed to connect to trading platform. Make sure the backend is running.",
         variant: "destructive",
       });
     } finally {
@@ -129,6 +139,18 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
       window.open(loginUrl, '_blank');
     }
   };
+
+  const handleCredentialsSet = () => {
+    setShowCredentialsSetup(false);
+    toast({
+      title: "Credentials Configured",
+      description: "You can now proceed with Zerodha login",
+    });
+  };
+
+  if (showCredentialsSetup) {
+    return <CredentialsSetup onCredentialsSet={handleCredentialsSet} />;
+  }
 
   return (
     <Card>

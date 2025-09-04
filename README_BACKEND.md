@@ -9,13 +9,26 @@ A Python FastAPI backend that implements the detailed intraday trading strategy 
 pip install -r requirements.txt
 ```
 
-2. **Configure Zerodha API**
-- Get your API key and secret from Zerodha Console (https://kite.trade/)
-- Update `zerodha_client.py` with your credentials:
-```python
-self.api_key = "your_zerodha_api_key"
-self.api_secret = "your_zerodha_api_secret"
-```
+2. **Configure Zerodha API (choose one method):**
+
+   **Method 1: Environment Variables (Recommended)**
+   ```bash
+   export ZERODHA_API_KEY="your_actual_api_key"
+   export ZERODHA_API_SECRET="your_actual_api_secret"
+   ```
+
+   **Method 2: Config File**
+   - Copy `zerodha_config.json.example` to `zerodha_config.json`
+   - Edit `zerodha_config.json` with your credentials:
+     ```json
+     {
+       "api_key": "your_actual_api_key",
+       "api_secret": "your_actual_api_secret"
+     }
+     ```
+
+   **Method 3: Runtime (via API)**
+   - Use the `/api/set_credentials` endpoint to set credentials dynamically
 
 3. **Run the Backend**
 ```bash
