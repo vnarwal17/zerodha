@@ -330,12 +330,26 @@ serve(async (req) => {
           }, { headers: corsHeaders })
         }
 
+        // Get API key for proper authorization format
+        const { data: apiKeyData } = await supabaseClient
+          .from('trading_credentials')
+          .select('api_key')
+          .eq('id', 1)
+          .maybeSingle()
+
+        if (!apiKeyData?.api_key) {
+          return Response.json({
+            status: "error",
+            message: "API credentials not found."
+          }, { headers: corsHeaders })
+        }
+
         try {
-          // Fetch funds from Zerodha API
+          // Fetch funds from Zerodha API with correct authorization format
           const fundsResponse = await fetch(`${KITE_API_BASE}/user/margins`, {
             method: 'GET',
             headers: {
-              'Authorization': `token ${balanceSessionData.access_token}`,
+              'Authorization': `token ${apiKeyData.api_key}:${balanceSessionData.access_token}`,
               'X-Kite-Version': '3'
             }
           })
