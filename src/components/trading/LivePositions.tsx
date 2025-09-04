@@ -23,37 +23,8 @@ interface LivePositionsProps {
   onClosePosition?: (positionId: string) => void;
 }
 
-const mockPositions: Position[] = [
-  {
-    id: "1",
-    symbol: "RELIANCE",
-    direction: "long",
-    entryPrice: 2450.10,
-    currentPrice: 2465.30,
-    stopLoss: 2440.95,
-    target: 2525.85,
-    quantity: 40,
-    status: "active",
-    unrealizedPnl: 608,
-    entryTime: "10:15 AM"
-  },
-  {
-    id: "2", 
-    symbol: "HDFCBANK",
-    direction: "short",
-    entryPrice: 1650.75,
-    currentPrice: 1645.20,
-    stopLoss: 1665.90,
-    target: 1573.00,
-    quantity: 60,
-    status: "active",
-    unrealizedPnl: 333,
-    entryTime: "11:30 AM"
-  }
-];
-
 export function LivePositions({ 
-  positions = mockPositions, 
+  positions = [], 
   onClosePosition 
 }: LivePositionsProps) {
   const formatCurrency = (amount: number) => `₹${amount.toFixed(2)}`;

@@ -14,65 +14,6 @@ interface LogEntry {
   type: "info" | "success" | "warning" | "error";
 }
 
-const mockLogs: LogEntry[] = [
-  {
-    id: "1",
-    timestamp: "10:02:15",
-    symbol: "RELIANCE",
-    event: "SETUP_CONFIRMED",
-    message: "LONG setup - SMA: ₹2445.25",
-    type: "success"
-  },
-  {
-    id: "2", 
-    timestamp: "10:15:33",
-    symbol: "RELIANCE",
-    event: "REJECTION_FOUND",
-    message: "Wick: 18.5% of range at 10:15",
-    type: "info"
-  },
-  {
-    id: "3",
-    timestamp: "10:21:45",
-    symbol: "RELIANCE", 
-    event: "SKIP_COMPLETED",
-    message: "Entry search activated",
-    type: "info"
-  },
-  {
-    id: "4",
-    timestamp: "10:25:12",
-    symbol: "RELIANCE",
-    event: "TRADE_EXECUTED", 
-    message: "LONG - Entry: ₹2450.10, Qty: 40, Capital: ₹98,004",
-    type: "success"
-  },
-  {
-    id: "5",
-    timestamp: "11:28:07",
-    symbol: "HDFCBANK",
-    event: "SETUP_CONFIRMED",
-    message: "SHORT setup - SMA: ₹1655.80",
-    type: "success"
-  },
-  {
-    id: "6",
-    timestamp: "11:30:22",
-    symbol: "HDFCBANK",
-    event: "TRADE_EXECUTED",
-    message: "SHORT - Entry: ₹1650.75, Qty: 60, Capital: ₹99,045", 
-    type: "success"
-  },
-  {
-    id: "7",
-    timestamp: "12:45:18",
-    symbol: "TCS",
-    event: "SMA_CROSSED",
-    message: "Trading blocked for today",
-    type: "warning"
-  }
-];
-
 interface TradingLogsProps {
   logs?: LogEntry[];
   onRefresh?: () => void;
@@ -80,7 +21,7 @@ interface TradingLogsProps {
 }
 
 export function TradingLogs({ 
-  logs = mockLogs, 
+  logs = [], 
   onRefresh,
   onExport 
 }: TradingLogsProps) {
