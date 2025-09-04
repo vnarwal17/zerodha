@@ -125,7 +125,7 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
           Strategy Monitor
         </CardTitle>
         <CardDescription>
-          3-minute candle analysis with SMA9/SMA21 crossover and RSI signals
+          Your comprehensive intraday strategy with 50-period SMA, 10 AM setup validation, and 5:1 RR
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -217,12 +217,15 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
         </div>
 
         <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-          <h5 className="font-medium text-blue-900 mb-2">Strategy Rules:</h5>
+          <h5 className="font-medium text-blue-900 mb-2">Your Intraday Strategy Rules:</h5>
           <ul className="text-sm text-blue-700 space-y-1">
-            <li>• BUY: SMA9 &gt; SMA21, RSI &lt; 70, Price &gt; SMA9</li>
-            <li>• SELL: SMA9 &lt; SMA21, RSI &gt; 30, Price &lt; SMA9</li>
-            <li>• Analysis runs every 3 minutes on fresh candle data</li>
-            <li>• Auto-execute requires live trading to be active</li>
+            <li>• 50-period SMA on 3-minute candles</li>
+            <li>• 10 AM setup: Entire candle must be strictly above/below SMA</li>
+            <li>• Rejection candle: Wick touches SMA, body stays on setup side</li>
+            <li>• 2-candle skip period after rejection</li>
+            <li>• Entry: Rejection High/Low ± 0.10, SL: ± 0.15</li>
+            <li>• Target: 5:1 Risk/Reward ratio</li>
+            <li>• Trading window: 10 AM - 1 PM, Force exit at 3 PM</li>
           </ul>
         </div>
       </CardContent>

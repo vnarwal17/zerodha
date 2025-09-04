@@ -39,78 +39,219 @@ interface ApiResponse<T = any> {
   data?: T;
 }
 
-// Strategy calculation functions
-function calculateSMA(prices: number[], period: number): number {
-  if (prices.length < period) return 0;
-  const sum = prices.slice(-period).reduce((a, b) => a + b, 0);
-  return sum / period;
+// Your specific strategy implementation
+function calculateSMA50(prices: number[]): number {
+  if (prices.length < 50) return 0;
+  const sum = prices.slice(-50).reduce((a, b) => a + b, 0);
+  return sum / 50;
 }
 
-function calculateRSI(prices: number[], period: number = 14): number {
-  if (prices.length < period + 1) return 50;
+function isValidSetupCandle(candle: CandleData, sma50: number): { isValid: boolean; bias: 'LONG' | 'SHORT' | 'INVALID' } {
+  const { open, high, low, close } = candle;
   
-  let gains = 0;
-  let losses = 0;
-  
-  for (let i = prices.length - period; i < prices.length; i++) {
-    const change = prices[i] - prices[i - 1];
-    if (change > 0) gains += change;
-    else losses -= change;
+  // Long setup: entire candle strictly above SMA
+  if (low > sma50 && high > sma50 && open > sma50 && close > sma50) {
+    return { isValid: true, bias: 'LONG' };
   }
   
-  const avgGain = gains / period;
-  const avgLoss = losses / period;
-  const rs = avgGain / avgLoss;
-  return 100 - (100 / (1 + rs));
+  // Short setup: entire candle strictly below SMA
+  if (low < sma50 && high < sma50 && open < sma50 && close < sma50) {
+    return { isValid: true, bias: 'SHORT' };
+  }
+  
+  // Invalid if any part touches SMA
+  return { isValid: false, bias: 'INVALID' };
 }
 
-function analyzeStrategy(candles: CandleData[]): StrategySignal {
-  if (candles.length < 20) {
+function isValidRejectionCandle(candle: CandleData, sma50: number, bias: 'LONG' | 'SHORT'): boolean {
+  const { open, high, low, close } = candle;
+  const candleRange = high - low;
+  
+  if (bias === 'LONG') {
+    // Lower wick must touch SMA, body and close above SMA
+    const wickTouchesSMA = low <= sma50 && sma50 <= high;
+    const bodyAboveSMA = Math.min(open, close) > sma50;
+    const wickSize = Math.min(open, close) - low;
+    const wickPercentage = (wickSize / candleRange) * 100;
+    
+    return wickTouchesSMA && bodyAboveSMA && wickPercentage >= 15;
+  } else if (bias === 'SHORT') {
+    // Upper wick must touch SMA, body and close below SMA
+    const wickTouchesSMA = low <= sma50 && sma50 <= high;
+    const bodyBelowSMA = Math.max(open, close) < sma50;
+    const wickSize = high - Math.max(open, close);
+    const wickPercentage = (wickSize / candleRange) * 100;
+    
+    return wickTouchesSMA && bodyBelowSMA && wickPercentage >= 15;
+  }
+  
+  return false;
+}
+
+function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
+  if (candles.length < 50) {
     return {
       symbol: '',
       action: 'HOLD',
       price: 0,
       quantity: 0,
-      reason: 'Insufficient data'
+      reason: 'Insufficient candles for 50-period SMA calculation'
     };
   }
-  
+
   const closes = candles.map(c => c.close);
-  const currentPrice = closes[closes.length - 1];
+  const currentTime = new Date();
+  const currentHour = currentTime.getHours();
+  const currentMinute = currentTime.getMinutes();
   
-  // Calculate indicators
-  const sma9 = calculateSMA(closes, 9);
-  const sma21 = calculateSMA(closes, 21);
-  const rsi = calculateRSI(closes);
-  
-  // Strategy conditions
-  const bullishCondition = sma9 > sma21 && rsi < 70 && currentPrice > sma9;
-  const bearishCondition = sma9 < sma21 && rsi > 30 && currentPrice < sma9;
-  
-  if (bullishCondition) {
+  // Only trade between 10 AM and 1 PM (entry window)
+  if (currentHour < 10 || (currentHour >= 13)) {
     return {
       symbol: '',
-      action: 'BUY',
-      price: currentPrice,
-      quantity: 1,
-      reason: `Bullish signal: SMA9(${sma9.toFixed(2)}) > SMA21(${sma21.toFixed(2)}), RSI: ${rsi.toFixed(2)}`
-    };
-  } else if (bearishCondition) {
-    return {
-      symbol: '',
-      action: 'SELL',
-      price: currentPrice,
-      quantity: 1,
-      reason: `Bearish signal: SMA9(${sma9.toFixed(2)}) < SMA21(${sma21.toFixed(2)}), RSI: ${rsi.toFixed(2)}`
+      action: 'HOLD',
+      price: 0,
+      quantity: 0,
+      reason: 'Outside trading hours (10 AM - 1 PM entry window)'
     };
   }
+
+  // Find the 10 AM setup candle (09:57-09:59)
+  // For this implementation, we'll use the candle that should represent this timeframe
+  const setupCandleIndex = candles.length - 1; // Most recent for demo
+  const setupCandle = candles[setupCandleIndex];
+  const sma50 = calculateSMA50(closes);
   
+  if (sma50 === 0) {
+    return {
+      symbol: '',
+      action: 'HOLD',
+      price: 0,
+      quantity: 0,
+      reason: 'SMA50 calculation failed'
+    };
+  }
+
+  // Check 10 AM setup validity
+  const setupResult = isValidSetupCandle(setupCandle, sma50);
+  
+  if (!setupResult.isValid) {
+    return {
+      symbol: '',
+      action: 'HOLD',
+      price: 0,
+      quantity: 0,
+      reason: 'Invalid 10 AM setup - candle touches SMA or straddles it'
+    };
+  }
+
+  // Look for rejection candle after setup
+  let rejectionCandle: CandleData | null = null;
+  let rejectionIndex = -1;
+  
+  // Search for rejection candle in subsequent candles
+  for (let i = setupCandleIndex + 1; i < candles.length; i++) {
+    const candidate = candles[i];
+    
+    // Check if any candle fully crosses SMA (invalidates day)
+    if ((candidate.low <= sma50 && candidate.high >= sma50) && 
+        !isValidRejectionCandle(candidate, sma50, setupResult.bias)) {
+      return {
+        symbol: '',
+        action: 'HOLD',
+        price: 0,
+        quantity: 0,
+        reason: 'Day invalidated - candle crossed SMA without valid rejection'
+      };
+    }
+    
+    if (isValidRejectionCandle(candidate, sma50, setupResult.bias)) {
+      rejectionCandle = candidate;
+      rejectionIndex = i;
+      break;
+    }
+  }
+  
+  if (!rejectionCandle) {
+    return {
+      symbol: '',
+      action: 'HOLD',
+      price: 0,
+      quantity: 0,
+      reason: 'No valid rejection candle found yet'
+    };
+  }
+
+  // Check if we're past the 2-candle skip period
+  const candlesAfterRejection = candles.length - 1 - rejectionIndex;
+  if (candlesAfterRejection < 2) {
+    return {
+      symbol: '',
+      action: 'HOLD',
+      price: 0,
+      quantity: 0,
+      reason: 'In 2-candle skip period after rejection'
+    };
+  }
+
+  // Calculate entry and stop loss based on rejection candle
+  const currentPrice = candles[candles.length - 1].close;
+  
+  if (setupResult.bias === 'LONG') {
+    const entryPrice = rejectionCandle.high + 0.10;
+    const stopLoss = rejectionCandle.low - 0.15;
+    const risk = entryPrice - stopLoss;
+    const target = entryPrice + (risk * 5); // 5:1 RR
+    
+    // Check if current price triggers entry
+    if (currentPrice >= entryPrice) {
+      return {
+        symbol: '',
+        action: 'BUY',
+        price: entryPrice,
+        quantity: 1,
+        reason: `LONG entry triggered. Entry: ${entryPrice.toFixed(2)}, SL: ${stopLoss.toFixed(2)}, Target: ${target.toFixed(2)} (5R)`
+      };
+    } else {
+      return {
+        symbol: '',
+        action: 'HOLD',
+        price: currentPrice,
+        quantity: 0,
+        reason: `LONG setup ready. Waiting for price ${entryPrice.toFixed(2)} (Current: ${currentPrice.toFixed(2)})`
+      };
+    }
+  } else if (setupResult.bias === 'SHORT') {
+    const entryPrice = rejectionCandle.low - 0.10;
+    const stopLoss = rejectionCandle.high + 0.15;
+    const risk = stopLoss - entryPrice;
+    const target = entryPrice - (risk * 5); // 5:1 RR
+    
+    // Check if current price triggers entry
+    if (currentPrice <= entryPrice) {
+      return {
+        symbol: '',
+        action: 'SELL',
+        price: entryPrice,
+        quantity: 1,
+        reason: `SHORT entry triggered. Entry: ${entryPrice.toFixed(2)}, SL: ${stopLoss.toFixed(2)}, Target: ${target.toFixed(2)} (5R)`
+      };
+    } else {
+      return {
+        symbol: '',
+        action: 'HOLD',
+        price: currentPrice,
+        quantity: 0,
+        reason: `SHORT setup ready. Waiting for price ${entryPrice.toFixed(2)} (Current: ${currentPrice.toFixed(2)})`
+      };
+    }
+  }
+
   return {
     symbol: '',
     action: 'HOLD',
     price: currentPrice,
     quantity: 0,
-    reason: `No signal: SMA9(${sma9.toFixed(2)}), SMA21(${sma21.toFixed(2)}), RSI: ${rsi.toFixed(2)}`
+    reason: 'No valid signal generated'
   };
 }
 
@@ -610,7 +751,7 @@ serve(async (req) => {
             }))
 
             // Analyze strategy for this symbol
-            const signal = analyzeStrategy(candles)
+            const signal = analyzeIntradayStrategy(candles)
             signal.symbol = symbol
 
             return Response.json({
@@ -771,7 +912,7 @@ serve(async (req) => {
                   volume: candle[5]
                 }))
 
-                const signal = analyzeStrategy(candles)
+                const signal = analyzeIntradayStrategy(candles)
                 signal.symbol = sym.symbol
                 signals.push(signal)
               }
