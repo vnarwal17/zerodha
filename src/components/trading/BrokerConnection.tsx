@@ -78,10 +78,10 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
         });
       }
     } catch (error) {
-      setShowBackendError(true);
+      console.error('Connection failed:', error);
       toast({
-        title: "Backend Server Error",
-        description: "Failed to connect to Python backend server.",
+        title: "Connection Error", 
+        description: "Failed to connect to trading backend. Please check your internet connection and try again.",
         variant: "destructive",
       });
     } finally {
@@ -132,10 +132,10 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
         });
       }
     } catch (error) {
-      setShowBackendError(true);
+      console.error('Token connection failed:', error);
       toast({
-        title: "Backend Server Error",
-        description: "Failed to connect to Python backend server.",
+        title: "Connection Error",
+        description: "Failed to authenticate with token. Please check your token and try again.",
         variant: "destructive",
       });
     } finally {
@@ -161,20 +161,9 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
 
     setLoading(true);
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/set_credentials", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          api_key: apiKey,
-          api_secret: apiSecret,
-        }),
-      });
-
-      const data = await response.json();
+      const response = await tradingApi.setCredentials(apiKey, apiSecret);
       
-      if (data.status === "success") {
+      if (response.status === "success") {
         toast({
           title: "Credentials Set",
           description: "API credentials configured successfully",
@@ -184,15 +173,14 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
       } else {
         toast({
           title: "Error",
-          description: data.message || "Failed to set credentials",
+          description: response.message || "Failed to set credentials",
           variant: "destructive",
         });
       }
     } catch (error) {
-      setShowBackendError(true);
       toast({
-        title: "Backend Server Error",
-        description: "Failed to connect to Python backend server.",
+        title: "Connection Error",
+        description: "Failed to save credentials. Please try again.",
         variant: "destructive",
       });
     } finally {

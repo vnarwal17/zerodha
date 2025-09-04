@@ -1,1 +1,4 @@
 project_id = "gvkfqovfzguyslvdudqw"
+
+[functions.trading-api]
+verify_jwt = false
