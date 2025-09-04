@@ -51,6 +51,36 @@ export interface TradingSettings {
   position_sizing: 'fixed_capital' | 'fixed_risk';
 }
 
+export interface CandleData {
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface StrategySignal {
+  symbol: string;
+  action: 'BUY' | 'SELL' | 'HOLD';
+  price: number;
+  quantity: number;
+  reason: string;
+}
+
+export interface TradeLog {
+  id: string;
+  symbol: string;
+  action: 'BUY' | 'SELL';
+  quantity: number;
+  price?: number;
+  order_id?: string;
+  order_type: string;
+  status: string;
+  timestamp: string;
+  created_at: string;
+}
+
 class TradingApiService {
   private supabase = createClient(
     'https://gvkfqovfzguyslvdudqw.supabase.co',
@@ -126,6 +156,43 @@ class TradingApiService {
   // Settings
   async updateSettings(settings: Partial<TradingSettings>): Promise<ApiResponse<{}>> {
     return this.callEdgeFunction('/update_settings', settings);
+  }
+
+  // Strategy & Trading
+  async getHistoricalData(symbol: string, instrumentToken: number, interval: string = '3minute', days: number = 30): Promise<ApiResponse<{
+    symbol: string;
+    candles: CandleData[];
+    signal: StrategySignal;
+    count: number;
+  }>> {
+    return this.callEdgeFunction('/get_historical_data', { 
+      symbol, 
+      instrument_token: instrumentToken, 
+      interval, 
+      days 
+    });
+  }
+
+  async executeTrade(symbol: string, action: 'BUY' | 'SELL', quantity: number, orderType: string = 'MARKET'): Promise<ApiResponse<{
+    order_id: string;
+    symbol: string;
+    action: string;
+    quantity: number;
+  }>> {
+    return this.callEdgeFunction('/execute_trade', { 
+      trade_symbol: symbol, 
+      action, 
+      quantity, 
+      order_type: orderType 
+    });
+  }
+
+  async analyzeSymbols(symbols: TradingSymbol[]): Promise<ApiResponse<{
+    signals: StrategySignal[];
+    timestamp: string;
+    analyzed_count: number;
+  }>> {
+    return this.callEdgeFunction('/analyze_symbols', { monitoring_symbols: symbols });
   }
 
   // Export
