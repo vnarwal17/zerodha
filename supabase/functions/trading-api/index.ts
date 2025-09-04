@@ -215,96 +215,98 @@ serve(async (req) => {
           .eq('id', 1)
           .maybeSingle()
 
-        if (!instrumentsSessionData?.access_token || !instrumentsApiKeyData?.api_key) {
-          // Return limited mock data if not authenticated
-          const mockInstruments = [
-            { symbol: "RELIANCE", instrument_token: 738561, exchange: "NSE", name: "Reliance Industries Ltd.", is_nifty50: true, is_banknifty: false },
-            { symbol: "TCS", instrument_token: 2953217, exchange: "NSE", name: "Tata Consultancy Services Ltd.", is_nifty50: true, is_banknifty: false },
-            { symbol: "HDFC", instrument_token: 340481, exchange: "NSE", name: "HDFC Bank Ltd.", is_nifty50: true, is_banknifty: false },
-          ]
+        // Define comprehensive stock lists
+        const nifty50Stocks = ["RELIANCE", "TCS", "HDFCBANK", "INFY", "HINDUNILVR", "HDFC", "ICICIBANK", "KOTAKBANK", "BHARTIARTL", "ITC", "SBIN", "BAJFINANCE", "ASIANPAINT", "MARUTI", "HCLTECH", "AXISBANK", "LT", "DMART", "SUNPHARMA", "TITAN", "ULTRACEMCO", "NESTLEIND", "WIPRO", "NTPC", "JSWSTEEL", "TECHM", "TATAMOTORS", "INDUSINDBK", "POWERGRID", "BAJAJFINSV", "GRASIM", "ADANIENT", "COALINDIA", "HEROMOTOCO", "CIPLA", "EICHERMOT", "BRITANNIA", "DIVISLAB", "DRREDDY", "APOLLOHOSP", "TATACONSUM", "UPL", "BAJAJ-AUTO", "HINDALCO", "ONGC", "SBILIFE", "BPCL", "TATASTEEL", "HDFCLIFE", "ADANIPORTS"]
+        const bankniftyStocks = ["HDFCBANK", "ICICIBANK", "KOTAKBANK", "SBIN", "AXISBANK", "INDUSINDBK", "BAJFINANCE", "BAJAJFINSV", "PNB", "BANKBARODA", "AUBANK", "IDFCFIRSTB"]
+        
+        // Create instruments from the stock lists
+        const createInstrument = (symbol: string, baseToken: number) => ({
+          symbol: symbol,
+          instrument_token: baseToken,
+          exchange: "NSE",
+          name: symbol + " Ltd.",
+          is_nifty50: nifty50Stocks.includes(symbol),
+          is_banknifty: bankniftyStocks.includes(symbol)
+        })
 
-          return Response.json({
-            status: "success",
-            data: {
-              instruments: mockInstruments,
-              nifty50_stocks: ["RELIANCE", "TCS", "HDFC", "INFY", "HDFCBANK"],
-              banknifty_stocks: ["HDFCBANK", "ICICIBANK", "SBIN", "KOTAKBANK"],
-              count: mockInstruments.length
-            }
-          }, { headers: corsHeaders })
-        }
+        let instruments = []
 
-        try {
-          // Fetch real instruments from Zerodha API
-          const instrumentsResponse = await fetch(`${KITE_API_BASE}/instruments`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `token ${instrumentsApiKeyData.api_key}:${instrumentsSessionData.access_token}`,
-              'X-Kite-Version': '3'
-            }
-          })
+        if (instrumentsSessionData?.access_token && instrumentsApiKeyData?.api_key) {
+          try {
+            // Try to fetch real instruments from Zerodha API
+            const instrumentsResponse = await fetch(`${KITE_API_BASE}/instruments`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `token ${instrumentsApiKeyData.api_key}:${instrumentsSessionData.access_token}`,
+                'X-Kite-Version': '3'
+              }
+            })
 
-          if (instrumentsResponse.ok) {
-            const instrumentsText = await instrumentsResponse.text()
-            const lines = instrumentsText.split('\n')
-            const headers = lines[0].split(',')
-            
-            // Parse CSV data
-            const instruments = []
-            const nifty50Stocks = ["RELIANCE", "TCS", "HDFCBANK", "INFY", "HINDUNILVR", "HDFC", "ICICIBANK", "KOTAKBANK", "BHARTIARTL", "ITC", "SBIN", "BAJFINANCE", "ASIANPAINT", "MARUTI", "HCLTECH", "AXISBANK", "LT", "DMART", "SUNPHARMA", "TITAN", "ULTRACEMCO", "NESTLEIND", "WIPRO", "NTPC", "JSWSTEEL", "TECHM", "TATAMOTORS", "INDUSINDBK", "POWERGRID", "BAJAJFINSV", "GRASIM", "ADANIENT", "COALINDIA", "HEROMOTOCO", "CIPLA", "EICHERMOT", "BRITANNIA", "DIVISLAB", "DRREDDY", "APOLLOHOSP", "TATACONSUM", "UPL", "BAJAJ-AUTO", "HINDALCO", "ONGC", "SBILIFE", "BPCL", "TATASTEEL", "HDFCLIFE", "ADANIPORTS"]
-            const bankniftyStocks = ["HDFCBANK", "ICICIBANK", "KOTAKBANK", "SBIN", "AXISBANK", "INDUSINDBK", "BAJFINANCE", "BAJAJFINSV", "PNB", "BANKBARODA", "AUBANK", "IDFCFIRSTB"]
+            console.log('Instruments API response status:', instrumentsResponse.status)
 
-            for (let i = 1; i < lines.length && i <= 1000; i++) { // Limit to first 1000 for performance
-              const cols = lines[i].split(',')
-              if (cols.length >= 8) {
-                const symbol = cols[2]?.replace(/"/g, '')
-                const exchange = cols[11]?.replace(/"/g, '')
+            if (instrumentsResponse.ok) {
+              const instrumentsText = await instrumentsResponse.text()
+              console.log('Instruments data length:', instrumentsText.length)
+              
+              if (instrumentsText.length > 100) { // Check if we got actual data
+                const lines = instrumentsText.split('\n')
+                console.log('Number of lines:', lines.length)
                 
-                if (exchange === 'NSE' && symbol) {
-                  instruments.push({
-                    symbol: symbol,
-                    instrument_token: parseInt(cols[0]) || 0,
-                    exchange: exchange,
-                    name: cols[1]?.replace(/"/g, '') || symbol,
-                    is_nifty50: nifty50Stocks.includes(symbol),
-                    is_banknifty: bankniftyStocks.includes(symbol)
-                  })
+                // Parse CSV data
+                for (let i = 1; i < lines.length && instruments.length < 200; i++) {
+                  const cols = lines[i].split(',')
+                  if (cols.length >= 8) {
+                    const symbol = cols[2]?.replace(/"/g, '')
+                    const exchange = cols[11]?.replace(/"/g, '')
+                    
+                    if (exchange === 'NSE' && symbol && (nifty50Stocks.includes(symbol) || bankniftyStocks.includes(symbol))) {
+                      instruments.push({
+                        symbol: symbol,
+                        instrument_token: parseInt(cols[0]) || 0,
+                        exchange: exchange,
+                        name: cols[1]?.replace(/"/g, '') || symbol + " Ltd.",
+                        is_nifty50: nifty50Stocks.includes(symbol),
+                        is_banknifty: bankniftyStocks.includes(symbol)
+                      })
+                    }
+                  }
                 }
               }
             }
-
-            return Response.json({
-              status: "success",
-              data: {
-                instruments: instruments.slice(0, 500), // Return top 500 for UI performance
-                nifty50_stocks: nifty50Stocks,
-                banknifty_stocks: bankniftyStocks,
-                count: instruments.length
-              }
-            }, { headers: corsHeaders })
-          } else {
-            throw new Error('Failed to fetch instruments')
+          } catch (error) {
+            console.error('Error fetching instruments:', error)
           }
-        } catch (error) {
-          // Fallback to enhanced mock data if API fails
-          const mockInstruments = [
-            { symbol: "RELIANCE", instrument_token: 738561, exchange: "NSE", name: "Reliance Industries Ltd.", is_nifty50: true, is_banknifty: false },
-            { symbol: "TCS", instrument_token: 2953217, exchange: "NSE", name: "Tata Consultancy Services Ltd.", is_nifty50: true, is_banknifty: false },
-            { symbol: "HDFCBANK", instrument_token: 341249, exchange: "NSE", name: "HDFC Bank Ltd.", is_nifty50: true, is_banknifty: true },
-            { symbol: "INFY", instrument_token: 408065, exchange: "NSE", name: "Infosys Ltd.", is_nifty50: true, is_banknifty: false },
-            { symbol: "ICICIBANK", instrument_token: 1270529, exchange: "NSE", name: "ICICI Bank Ltd.", is_nifty50: true, is_banknifty: true },
-          ]
-
-          return Response.json({
-            status: "success",
-            data: {
-              instruments: mockInstruments,
-              nifty50_stocks: ["RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK"],
-              banknifty_stocks: ["HDFCBANK", "ICICIBANK", "SBIN", "KOTAKBANK"],
-              count: mockInstruments.length
-            }
-          }, { headers: corsHeaders })
         }
+
+        // If no instruments from API, create from predefined lists
+        if (instruments.length === 0) {
+          console.log('Using fallback instruments')
+          let tokenBase = 100000
+          
+          // Add all Nifty 50 stocks
+          nifty50Stocks.forEach((symbol, index) => {
+            instruments.push(createInstrument(symbol, tokenBase + index))
+          })
+          
+          // Add additional Bank Nifty stocks not in Nifty 50
+          bankniftyStocks.forEach((symbol, index) => {
+            if (!nifty50Stocks.includes(symbol)) {
+              instruments.push(createInstrument(symbol, tokenBase + 50 + index))
+            }
+          })
+        }
+
+        console.log('Final instruments count:', instruments.length)
+
+        return Response.json({
+          status: "success",
+          data: {
+            instruments: instruments,
+            nifty50_stocks: nifty50Stocks,
+            banknifty_stocks: bankniftyStocks,
+            count: instruments.length
+          }
+        }, { headers: corsHeaders })
         break
 
       case '/start_live_trading':
