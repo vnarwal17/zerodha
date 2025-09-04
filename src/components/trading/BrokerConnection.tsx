@@ -5,7 +5,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Wifi, WifiOff, LogIn, User, AlertCircle, CheckCircle, Link as LinkIcon, Key, Eye, EyeOff, ExternalLink, Settings } from "lucide-react";
+import { Wifi, WifiOff, LogIn, User, AlertCircle, CheckCircle, Link as LinkIcon, Key, Eye, EyeOff, ExternalLink, Settings, AlertTriangle, Server } from "lucide-react";
 import { useState, useEffect } from "react";
 import { tradingApi } from "@/services/trading-api";
 import { useToast } from "@/hooks/use-toast";
@@ -22,6 +22,7 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
   const [userInfo, setUserInfo] = useState<any>(null);
   const [showConnectionModal, setShowConnectionModal] = useState(false);
   const [showCredentialsSetup, setShowCredentialsSetup] = useState(false);
+  const [showBackendError, setShowBackendError] = useState(false);
   
   // Credentials state
   const [apiKey, setApiKey] = useState("");
@@ -77,9 +78,10 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
         });
       }
     } catch (error) {
+      setShowBackendError(true);
       toast({
-        title: "Connection Error",
-        description: "Failed to connect to trading platform. Make sure the backend is running.",
+        title: "Backend Server Error",
+        description: "Failed to connect to Python backend server.",
         variant: "destructive",
       });
     } finally {
@@ -130,9 +132,10 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
         });
       }
     } catch (error) {
+      setShowBackendError(true);
       toast({
-        title: "Connection Error",
-        description: "Failed to connect with token",
+        title: "Backend Server Error",
+        description: "Failed to connect to Python backend server.",
         variant: "destructive",
       });
     } finally {
@@ -186,9 +189,10 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
         });
       }
     } catch (error) {
+      setShowBackendError(true);
       toast({
-        title: "Connection Error",
-        description: "Failed to connect to backend server",
+        title: "Backend Server Error",
+        description: "Failed to connect to Python backend server.",
         variant: "destructive",
       });
     } finally {
@@ -462,6 +466,87 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
                 </div>
               </AlertDescription>
             </Alert>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Backend Error Modal */}
+      <Dialog open={showBackendError} onOpenChange={setShowBackendError}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              <span>Backend Server Required</span>
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <Alert>
+              <Server className="h-4 w-4" />
+              <AlertDescription>
+                The Python backend server is not running. This is required to connect to Zerodha APIs.
+              </AlertDescription>
+            </Alert>
+
+            <div className="bg-muted p-4 rounded-lg space-y-3">
+              <p className="font-medium text-sm">To start the backend server:</p>
+              
+              <div className="space-y-2">
+                <div className="bg-background p-3 rounded border font-mono text-sm">
+                  <div className="text-muted-foreground"># Install dependencies:</div>
+                  <div className="text-foreground">pip install -r requirements.txt</div>
+                </div>
+                
+                <div className="bg-background p-3 rounded border font-mono text-sm">
+                  <div className="text-muted-foreground"># Start the server:</div>
+                  <div className="text-foreground">python main.py</div>
+                </div>
+              </div>
+              
+              <p className="text-xs text-muted-foreground">
+                The server should run on <code className="bg-background px-1 rounded">http://127.0.0.1:8000</code>
+              </p>
+            </div>
+
+            <div className="flex space-x-3">
+              <Button
+                variant="outline"
+                onClick={() => setShowBackendError(false)}
+                className="flex-1"
+              >
+                Close
+              </Button>
+              <Button
+                onClick={async () => {
+                  try {
+                    const response = await tradingApi.testConnection();
+                    if (response.status === 'connected' || response.status === 'success') {
+                      setShowBackendError(false);
+                      toast({
+                        title: "Success",
+                        description: "Backend server is now running!",
+                      });
+                    } else {
+                      toast({
+                        title: "Still Not Connected",
+                        description: "Server is not responding correctly",
+                        variant: "destructive",
+                      });
+                    }
+                  } catch {
+                    toast({
+                      title: "Still Not Running",
+                      description: "Backend server is still not accessible",
+                      variant: "destructive",
+                    });
+                  }
+                }}
+                className="flex-1"
+              >
+                <Server className="h-4 w-4 mr-2" />
+                Test Connection
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
