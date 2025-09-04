@@ -14,7 +14,141 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      trading_credentials: {
+        Row: {
+          api_key: string
+          api_secret: string
+          created_at: string
+          id: number
+          updated_at: string
+        }
+        Insert: {
+          api_key: string
+          api_secret: string
+          created_at?: string
+          id?: number
+          updated_at?: string
+        }
+        Update: {
+          api_key?: string
+          api_secret?: string
+          created_at?: string
+          id?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      trading_logs: {
+        Row: {
+          created_at: string
+          id: string
+          level: string | null
+          message: string
+          symbol: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          level?: string | null
+          message: string
+          symbol?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          level?: string | null
+          message?: string
+          symbol?: string | null
+        }
+        Relationships: []
+      }
+      trading_positions: {
+        Row: {
+          created_at: string
+          current_price: number | null
+          entry_price: number
+          id: string
+          pnl: number | null
+          quantity: number
+          status: string | null
+          symbol: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          current_price?: number | null
+          entry_price: number
+          id?: string
+          pnl?: number | null
+          quantity: number
+          status?: string | null
+          symbol: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          current_price?: number | null
+          entry_price?: number
+          id?: string
+          pnl?: number | null
+          quantity?: number
+          status?: string | null
+          symbol?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      trading_sessions: {
+        Row: {
+          created_at: string
+          id: number
+          request_token: string | null
+          status: string | null
+          symbols: Json | null
+          trading_active: boolean | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          request_token?: string | null
+          status?: string | null
+          symbols?: Json | null
+          trading_active?: boolean | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          request_token?: string | null
+          status?: string | null
+          symbols?: Json | null
+          trading_active?: boolean | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      trading_settings: {
+        Row: {
+          created_at: string
+          id: number
+          settings: Json | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          settings?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          settings?: Json | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

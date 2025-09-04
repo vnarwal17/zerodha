@@ -1,5 +1,4 @@
-// API service for communicating with the Python trading bot backend
-const API_BASE_URL = 'http://127.0.0.1:8000/api';
+import { createClient } from '@supabase/supabase-js';
 
 export interface TradingSymbol {
   symbol: string;
@@ -53,43 +52,47 @@ export interface TradingSettings {
 }
 
 class TradingApiService {
-  private async makeRequest<T>(
-    endpoint: string, 
-    options: RequestInit = {}
-  ): Promise<ApiResponse<T>> {
+  private supabase = createClient(
+    'https://gvkfqovfzguyslvdudqw.supabase.co',
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd2a2Zxb3Zmemd1eXNsdmR1ZHF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwMDUxNzMsImV4cCI6MjA3MjU4MTE3M30.YpfN1WDZsjlUwJuvhZlSskCbsTG-DURuowZGADR7h9Q'
+  );
+
+  private async callEdgeFunction<T>(path: string, data?: any): Promise<ApiResponse<T>> {
     try {
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...options.headers,
-        },
-        ...options,
+      const { data: result, error } = await this.supabase.functions.invoke('trading-api', {
+        body: { path, ...data }
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      if (error) {
+        console.error(`Edge function error for ${path}:`, error);
+        return {
+          status: 'error',
+          message: error.message || 'Unknown error occurred'
+        };
       }
 
-      return await response.json();
+      return result;
     } catch (error) {
-      console.error(`API request failed for ${endpoint}:`, error);
+      console.error(`API request failed for ${path}:`, error);
       return {
         status: 'error',
-        message: error instanceof Error ? error.message : 'Unknown error occurred'
+        message: error instanceof Error ? error.message : 'Failed to connect to backend server'
       };
     }
   }
 
+  // Credentials
+  async setCredentials(apiKey: string, apiSecret: string): Promise<ApiResponse<{}>> {
+    return this.callEdgeFunction('/set_credentials', { api_key: apiKey, api_secret: apiSecret });
+  }
+
   // Authentication
   async login(requestToken?: string): Promise<ApiResponse<{ user_id: string; login_url?: string }>> {
-    return this.makeRequest('/login', {
-      method: 'POST',
-      body: JSON.stringify({ request_token: requestToken }),
-    });
+    return this.callEdgeFunction('/login', { request_token: requestToken });
   }
 
   async testConnection(): Promise<ApiResponse<{ user_id: string; user_name: string; status?: string }>> {
-    return this.makeRequest('/test_connection');
+    return this.callEdgeFunction('/test_connection');
   }
 
   // Instruments
@@ -99,59 +102,55 @@ class TradingApiService {
     banknifty_stocks: string[];
     count: number;
   }>> {
-    return this.makeRequest('/instruments');
+    return this.callEdgeFunction('/instruments');
   }
 
   // Live Trading
   async startLiveTrading(symbols: TradingSymbol[]): Promise<ApiResponse<{ symbols: string[] }>> {
-    return this.makeRequest('/start_live_trading', {
-      method: 'POST',
-      body: JSON.stringify({ symbols }),
-    });
+    return this.callEdgeFunction('/start_live_trading', { symbols });
   }
 
   async stopLiveTrading(): Promise<ApiResponse<{}>> {
-    return this.makeRequest('/stop_live_trading', {
-      method: 'POST',
-    });
+    return this.callEdgeFunction('/stop_live_trading');
   }
 
   async getLiveStatus(): Promise<ApiResponse<{ live_status: LiveStatus }>> {
-    return this.makeRequest('/live_status');
+    return this.callEdgeFunction('/live_status');
   }
 
   // Settings
   async updateSettings(settings: Partial<TradingSettings>): Promise<ApiResponse<{}>> {
-    return this.makeRequest('/update_settings', {
-      method: 'POST',
-      body: JSON.stringify(settings),
-    });
+    return this.callEdgeFunction('/update_settings', settings);
   }
 
   // Export
   async exportTrades(trades: any[]): Promise<ApiResponse<Blob>> {
     try {
-      const response = await fetch(`${API_BASE_URL}/export`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ trades }),
-      });
-
-      if (response.ok) {
-        const blob = await response.blob();
-        return { status: 'success', data: blob };
-      } else {
-        const error = await response.json();
-        return { status: 'error', message: error.message };
-      }
+      const csvContent = this.convertToCSV(trades);
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      return {
+        status: 'success',
+        message: 'Export completed',
+        data: blob
+      };
     } catch (error) {
       return {
         status: 'error',
         message: error instanceof Error ? error.message : 'Export failed'
       };
     }
+  }
+
+  private convertToCSV(data: any[]): string {
+    if (!data || data.length === 0) return '';
+    
+    const headers = Object.keys(data[0]);
+    const csvContent = [
+      headers.join(','),
+      ...data.map(row => headers.map(header => row[header]).join(','))
+    ].join('\n');
+    
+    return csvContent;
   }
 }
 

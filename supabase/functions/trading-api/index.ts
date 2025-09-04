@@ -24,8 +24,7 @@ serve(async (req) => {
   }
 
   try {
-    const url = new URL(req.url)
-    const path = url.pathname.replace('/functions/v1/trading-api', '')
+    const { path, ...requestData } = await req.json()
     
     // Initialize Supabase client
     const supabaseClient = createClient(
@@ -35,8 +34,7 @@ serve(async (req) => {
 
     switch (path) {
       case '/set_credentials':
-        if (req.method === 'POST') {
-          const { api_key, api_secret } = await req.json()
+        const { api_key, api_secret } = requestData
           
           if (!api_key || !api_secret) {
             return Response.json({
@@ -66,12 +64,10 @@ serve(async (req) => {
             status: "success",
             message: "Credentials updated successfully"
           }, { headers: corsHeaders })
-        }
         break
 
       case '/login':
-        if (req.method === 'POST') {
-          const { request_token } = await req.json()
+        const { request_token } = requestData
           
           if (request_token) {
             // Store login session
@@ -103,11 +99,9 @@ serve(async (req) => {
               data: { login_url: "https://kite.trade/connect/login?api_key=YOUR_API_KEY" }
             }, { headers: corsHeaders })
           }
-        }
         break
 
       case '/test_connection':
-        if (req.method === 'GET') {
           const { data } = await supabaseClient
             .from('trading_sessions')
             .select('*')
@@ -129,11 +123,9 @@ serve(async (req) => {
               message: "Not connected to broker"
             }, { headers: corsHeaders })
           }
-        }
         break
 
       case '/instruments':
-        if (req.method === 'GET') {
           // Mock instruments data
           const mockInstruments = [
             { symbol: "RELIANCE", instrument_token: 738561, exchange: "NSE" },
@@ -150,12 +142,10 @@ serve(async (req) => {
               count: mockInstruments.length
             }
           }, { headers: corsHeaders })
-        }
         break
 
       case '/start_live_trading':
-        if (req.method === 'POST') {
-          const { symbols } = await req.json()
+        const { symbols } = requestData
           
           // Store trading session
           const { error } = await supabaseClient
@@ -179,11 +169,9 @@ serve(async (req) => {
             message: `Started live trading for ${symbols.length} symbols`,
             data: { symbols: symbols.map((s: TradingSymbol) => s.symbol) }
           }, { headers: corsHeaders })
-        }
         break
 
       case '/stop_live_trading':
-        if (req.method === 'POST') {
           const { error } = await supabaseClient
             .from('trading_sessions')
             .upsert({
@@ -203,11 +191,9 @@ serve(async (req) => {
             status: "success",
             message: "Live trading stopped"
           }, { headers: corsHeaders })
-        }
         break
 
       case '/live_status':
-        if (req.method === 'GET') {
           const { data } = await supabaseClient
             .from('trading_sessions')
             .select('*')
@@ -227,12 +213,10 @@ serve(async (req) => {
               }
             }
           }, { headers: corsHeaders })
-        }
         break
 
       case '/update_settings':
-        if (req.method === 'POST') {
-          const settings = await req.json()
+        const settings = requestData
           
           const { error } = await supabaseClient
             .from('trading_settings')
@@ -253,7 +237,6 @@ serve(async (req) => {
             status: "success",
             message: "Settings updated successfully"
           }, { headers: corsHeaders })
-        }
         break
 
       default:
