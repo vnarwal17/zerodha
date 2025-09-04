@@ -163,6 +163,15 @@ class TradingApiService {
     return this.callEdgeFunction('/update_settings', settings);
   }
 
+  // Test Order Execution
+  async placeTestOrder(symbol: string = 'SBIN'): Promise<ApiResponse<{
+    order_id: string;
+    symbol: string;
+    message: string;
+  }>> {
+    return this.callEdgeFunction('/place_test_order', { test_symbol: symbol });
+  }
+
   // Strategy & Trading
   async getHistoricalData(symbol: string, instrumentToken: number, interval: string = '3minute', days: number = 30): Promise<ApiResponse<{
     symbol: string;

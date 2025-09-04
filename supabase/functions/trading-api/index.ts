@@ -957,6 +957,95 @@ serve(async (req) => {
         }, { headers: corsHeaders })
         break
 
+      case '/place_test_order':
+        const { test_symbol = 'SBIN' } = requestData
+        
+        const { data: testSessionData } = await supabaseClient
+          .from('trading_sessions')
+          .select('access_token')
+          .eq('id', 1)
+          .maybeSingle()
+
+        const { data: testApiKeyData } = await supabaseClient
+          .from('trading_credentials')
+          .select('api_key')
+          .eq('id', 1)
+          .maybeSingle()
+
+        if (!testSessionData?.access_token || !testApiKeyData?.api_key) {
+          return Response.json({
+            status: "error",
+            message: "Not authenticated. Please login first."
+          }, { headers: corsHeaders })
+        }
+
+        try {
+          // Place a minimal test order - 1 share of SBIN (State Bank of India)
+          const testOrderParams = new URLSearchParams({
+            tradingsymbol: test_symbol,
+            exchange: 'NSE',
+            transaction_type: 'BUY',
+            order_type: 'MARKET',
+            quantity: '1', // Minimal quantity for testing
+            product: 'MIS', // Intraday
+            validity: 'DAY',
+            market_protection: '-1', // Auto protection
+            tag: 'API_TEST'
+          });
+
+          console.log('Placing test order with params:', Object.fromEntries(testOrderParams));
+
+          const testOrderResponse = await fetch(`${KITE_API_BASE}/orders/regular`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `token ${testApiKeyData.api_key}:${testSessionData.access_token}`,
+              'X-Kite-Version': '3',
+              'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: testOrderParams
+          })
+
+          const testOrderData = await testOrderResponse.json()
+          console.log('Test order response:', testOrderData);
+
+          if (testOrderResponse.ok && testOrderData.status === 'success') {
+            // Log the test order
+            await supabaseClient
+              .from('trade_logs')
+              .insert({
+                symbol: test_symbol,
+                action: 'BUY',
+                quantity: 1,
+                order_id: testOrderData.data.order_id,
+                order_type: 'MARKET',
+                status: 'TEST_ORDER_PLACED',
+                timestamp: new Date().toISOString()
+              })
+
+            return Response.json({
+              status: "success",
+              message: `Test order placed successfully for ${test_symbol}`,
+              data: {
+                order_id: testOrderData.data.order_id,
+                symbol: test_symbol,
+                message: "✅ API connection working! Test order executed on Zerodha."
+              }
+            }, { headers: corsHeaders })
+          } else {
+            return Response.json({
+              status: "error",
+              message: testOrderData.message || `Failed to place test order for ${test_symbol}`
+            }, { headers: corsHeaders })
+          }
+        } catch (error) {
+          console.error('Test order error:', error);
+          return Response.json({
+            status: "error",
+            message: "Failed to execute test order - Check API connection"
+          }, { headers: corsHeaders })
+        }
+        break
+
       default:
         return Response.json({
           status: "error",

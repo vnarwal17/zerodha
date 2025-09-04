@@ -5,7 +5,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Wifi, WifiOff, LogIn, User, AlertCircle, CheckCircle, Link as LinkIcon, Key, Eye, EyeOff, ExternalLink, Settings, AlertTriangle, Server } from "lucide-react";
+import { Wifi, WifiOff, LogIn, User, AlertCircle, CheckCircle, Link as LinkIcon, Key, Eye, EyeOff, ExternalLink, Settings, AlertTriangle, Server, Zap } from "lucide-react";
 import { useState, useEffect } from "react";
 import { tradingApi } from "@/services/trading-api";
 import { useToast } from "@/hooks/use-toast";
@@ -17,6 +17,7 @@ interface BrokerConnectionProps {
 
 export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConnectionProps) {
   const [loading, setLoading] = useState(false);
+  const [testOrderLoading, setTestOrderLoading] = useState(false);
   const [requestToken, setRequestToken] = useState("");
   const [loginUrl, setLoginUrl] = useState("");
   const [userInfo, setUserInfo] = useState<any>(null);
@@ -195,6 +196,34 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
     }
   };
 
+  const handleTestOrder = async () => {
+    setTestOrderLoading(true);
+    try {
+      const response = await tradingApi.placeTestOrder('SBIN');
+      
+      if (response.status === 'success') {
+        toast({
+          title: "✅ Test Order Success!",
+          description: response.data?.message || "Test order placed successfully on Zerodha",
+        });
+      } else {
+        toast({
+          title: "❌ Test Order Failed",
+          description: response.message || "Failed to place test order",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "❌ Test Order Error",
+        description: "Failed to execute test order - Check connection",
+        variant: "destructive",
+      });
+    } finally {
+      setTestOrderLoading(false);
+    }
+  };
+
   return (
     <>
       <Card>
@@ -250,6 +279,22 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
                   Ready for live trading. All API calls will be executed on your connected account.
                 </AlertDescription>
               </Alert>
+
+              {/* Test Order Button */}
+              <div className="pt-2 border-t border-border">
+                <Button
+                  onClick={handleTestOrder}
+                  disabled={testOrderLoading}
+                  variant="outline"
+                  className="w-full"
+                >
+                  <Zap className="h-4 w-4 mr-2" />
+                  {testOrderLoading ? "Placing Test Order..." : "🧪 Test Order Execution"}
+                </Button>
+                <p className="text-xs text-muted-foreground mt-2 text-center">
+                  Places a minimal test order (1 share SBIN) to verify API execution
+                </p>
+              </div>
             </div>
           ) : (
             <div className="space-y-4">
