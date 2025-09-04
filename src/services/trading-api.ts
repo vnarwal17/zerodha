@@ -61,7 +61,6 @@ export interface CandleData {
 }
 
 export interface TradingSettings {
-  dry_run: boolean;
   fixed_capital_per_trade: number;
   risk_percent: number;
   leverage: number;

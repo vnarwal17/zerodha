@@ -2,7 +2,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Settings, Save, RotateCcw } from "lucide-react";
 import { useState } from "react";
@@ -15,7 +14,6 @@ interface TradingSettingsProps {
 
 export function TradingSettingsComponent({ isConnected }: TradingSettingsProps) {
   const [settings, setSettings] = useState<TradingSettings>({
-    dry_run: true,
     fixed_capital_per_trade: 100000,
     risk_percent: 2,
     leverage: 1,
@@ -71,7 +69,6 @@ export function TradingSettingsComponent({ isConnected }: TradingSettingsProps) 
 
   const resetToDefaults = () => {
     setSettings({
-      dry_run: true,
       fixed_capital_per_trade: 100000,
       risk_percent: 2,
       leverage: 1,
@@ -93,26 +90,16 @@ export function TradingSettingsComponent({ isConnected }: TradingSettingsProps) 
       <CardHeader>
         <CardTitle className="flex items-center space-x-2">
           <Settings className="h-5 w-5 text-primary" />
-          <span>Trading Settings</span>
+          <span>Live Trading Settings</span>
         </CardTitle>
+        <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+          <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+          <span className="text-sm font-medium text-red-700">
+            ⚠️ LIVE TRADING MODE - All orders will be executed with real money
+          </span>
+        </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Trading Mode */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <Label>Paper Trading Mode</Label>
-              <p className="text-sm text-muted-foreground">
-                Enable for simulation without real trades
-              </p>
-            </div>
-            <Switch
-              checked={settings.dry_run}
-              onCheckedChange={(checked) => handleSettingChange('dry_run', checked)}
-            />
-          </div>
-        </div>
-
         {/* Position Sizing */}
         <div className="space-y-4">
           <div className="space-y-2">
