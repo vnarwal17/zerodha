@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      trade_logs: {
+        Row: {
+          action: string
+          created_at: string
+          id: string
+          order_id: string | null
+          order_type: string | null
+          price: number | null
+          quantity: number
+          status: string | null
+          symbol: string
+          timestamp: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          id?: string
+          order_id?: string | null
+          order_type?: string | null
+          price?: number | null
+          quantity: number
+          status?: string | null
+          symbol: string
+          timestamp?: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          id?: string
+          order_id?: string | null
+          order_type?: string | null
+          price?: number | null
+          quantity?: number
+          status?: string | null
+          symbol?: string
+          timestamp?: string
+        }
+        Relationships: []
+      }
       trading_credentials: {
         Row: {
           api_key: string
