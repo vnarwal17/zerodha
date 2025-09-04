@@ -100,31 +100,43 @@ export type Database = {
       }
       trading_sessions: {
         Row: {
+          access_token: string | null
           created_at: string
           id: number
+          login_time: string | null
           request_token: string | null
           status: string | null
           symbols: Json | null
           trading_active: boolean | null
           updated_at: string
+          user_id: string | null
+          user_name: string | null
         }
         Insert: {
+          access_token?: string | null
           created_at?: string
           id?: number
+          login_time?: string | null
           request_token?: string | null
           status?: string | null
           symbols?: Json | null
           trading_active?: boolean | null
           updated_at?: string
+          user_id?: string | null
+          user_name?: string | null
         }
         Update: {
+          access_token?: string | null
           created_at?: string
           id?: number
+          login_time?: string | null
           request_token?: string | null
           status?: string | null
           symbols?: Json | null
           trading_active?: boolean | null
           updated_at?: string
+          user_id?: string | null
+          user_name?: string | null
         }
         Relationships: []
       }
