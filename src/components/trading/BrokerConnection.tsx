@@ -28,9 +28,13 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
   const checkConnection = async () => {
     try {
       const response = await tradingApi.testConnection();
-      if (response.status === 'success' && response.data) {
+      if ((response.status === 'success' || response.status === 'connected') && response.data) {
         setUserInfo(response.data);
         onConnectionChange(true, response.data);
+      } else if (response.user_id) {
+        // Handle direct response format from main.py
+        setUserInfo(response);
+        onConnectionChange(true, response);
       } else {
         onConnectionChange(false);
       }
@@ -45,20 +49,20 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
     try {
       const response = await tradingApi.login(requestToken);
       
-      if (response.status === 'success' && response.data) {
-        setUserInfo(response.data);
-        onConnectionChange(true, response.data);
+      if (response.status === 'success' && response.user_id) {
+        setUserInfo(response);
+        onConnectionChange(true, response);
         setRequestToken("");
         setLoginUrl("");
         toast({
           title: "Connected Successfully",
-          description: `Welcome ${response.data.user_id}`,
+          description: `Welcome ${response.user_id}`,
         });
       } else if (response.status === 'requires_login' && response.login_url) {
         setLoginUrl(response.login_url);
         toast({
           title: "Login Required",
-          description: "Please complete login and enter the request token.",
+          description: "Please visit the login URL and copy the request token from the redirect URL after ?request_token=",
         });
       } else {
         toast({
@@ -155,7 +159,13 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
-                    Complete login on Zerodha and copy the request token from the redirect URL.
+                    <div className="space-y-2">
+                      <p>1. Click "Open Zerodha Login" to visit the login page</p>
+                      <p>2. Complete login with your Zerodha credentials</p>
+                      <p>3. After login, you'll be redirected to a URL containing the request token</p>
+                      <p>4. Copy the token from the URL (after ?request_token=) and paste it below</p>
+                      <p className="text-xs text-muted-foreground">Note: Tokens expire daily and need to be regenerated</p>
+                    </div>
                   </AlertDescription>
                 </Alert>
 
@@ -169,13 +179,17 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
                 </Button>
 
                 <div className="space-y-2">
-                  <Label htmlFor="request_token">Request Token</Label>
+                  <Label htmlFor="request_token">Request Token from Redirect URL</Label>
                   <Input
                     id="request_token"
-                    placeholder="Enter request token from redirect URL"
+                    placeholder="Paste request token here (e.g., xyz123abc456)"
                     value={requestToken}
                     onChange={(e) => setRequestToken(e.target.value)}
+                    className="font-mono text-xs"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    The token will be in the redirect URL: https://kite.zerodha.com/connect/login?request_token=<strong>YOUR_TOKEN</strong>
+                  </p>
                 </div>
 
                 <Button
@@ -191,8 +205,14 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                Connect to your Zerodha account to enable live trading. 
-                Your credentials are secure and handled directly by Zerodha's API.
+                <div className="space-y-1">
+                  <p>Connect to your Zerodha account to enable live trading.</p>
+                  <p className="text-xs text-muted-foreground">
+                    • Your credentials are secure and handled directly by Zerodha's API<br/>
+                    • Access tokens expire daily and need to be regenerated<br/>
+                    • This follows Zerodha's security requirements for API access
+                  </p>
+                </div>
               </AlertDescription>
             </Alert>
           </div>

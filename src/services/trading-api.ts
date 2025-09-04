@@ -11,7 +11,7 @@ export interface TradingSymbol {
 }
 
 export interface ApiResponse<T> {
-  status: 'success' | 'error' | 'info' | 'requires_login';
+  status: 'success' | 'error' | 'info' | 'requires_login' | 'connected' | 'disconnected';
   message?: string;
   data?: T;
   [key: string]: any;
@@ -88,7 +88,7 @@ class TradingApiService {
     });
   }
 
-  async testConnection(): Promise<ApiResponse<{ user_id: string; user_name: string }>> {
+  async testConnection(): Promise<ApiResponse<{ user_id: string; user_name: string; status?: string }>> {
     return this.makeRequest('/test_connection');
   }
 
