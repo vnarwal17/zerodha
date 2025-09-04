@@ -44,7 +44,48 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
     }
   };
 
-  const handleLogin = async () => {
+  const handleConnect = async () => {
+    setLoading(true);
+    try {
+      // First call to get login URL
+      const response = await tradingApi.login();
+      
+      if (response.status === 'requires_login' && response.login_url) {
+        setLoginUrl(response.login_url);
+        // Automatically open the login URL
+        window.open(response.login_url, '_blank');
+        toast({
+          title: "Login Window Opened",
+          description: "Complete login and copy the request token from the redirect URL",
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: response.message || "Failed to get login URL",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Connection Error",
+        description: "Failed to connect to trading platform",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTokenSubmit = async () => {
+    if (!requestToken.trim()) {
+      toast({
+        title: "Token Required",
+        description: "Please enter the request token",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await tradingApi.login(requestToken);
@@ -54,27 +95,28 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
         onConnectionChange(true, response);
         setRequestToken("");
         setLoginUrl("");
+        
+        // Save token with expiry (6:30 AM next day)
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(6, 30, 0, 0);
+        localStorage.setItem('zerodha_token_expiry', tomorrow.getTime().toString());
+        
         toast({
           title: "Connected Successfully",
-          description: `Welcome ${response.user_id}`,
-        });
-      } else if (response.status === 'requires_login' && response.login_url) {
-        setLoginUrl(response.login_url);
-        toast({
-          title: "Login Required",
-          description: "Please visit the login URL and copy the request token from the redirect URL after ?request_token=",
+          description: `Welcome ${response.user_id}. Token saved until 6:30 AM tomorrow.`,
         });
       } else {
         toast({
           title: "Login Failed",
-          description: response.message || "Unknown error occurred",
+          description: response.message || "Invalid token",
           variant: "destructive",
         });
       }
     } catch (error) {
       toast({
         title: "Connection Error",
-        description: "Failed to connect to trading platform",
+        description: "Failed to connect with token",
         variant: "destructive",
       });
     } finally {
@@ -147,7 +189,7 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
           <div className="space-y-4">
             {!loginUrl ? (
               <Button
-                onClick={handleLogin}
+                onClick={handleConnect}
                 disabled={loading}
                 className="w-full"
               >
@@ -193,7 +235,7 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
                 </div>
 
                 <Button
-                  onClick={handleLogin}
+                  onClick={handleTokenSubmit}
                   disabled={loading || !requestToken.trim()}
                   className="w-full"
                 >
