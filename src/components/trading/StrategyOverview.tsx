@@ -1,22 +1,32 @@
 import { MetricCard } from "@/components/ui/metric-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { TrendingUp, TrendingDown, Clock, Target, Shield, DollarSign } from "lucide-react";
+import { TrendingUp, TrendingDown, Clock, Target, Shield, DollarSign, BarChart3, Timer, Calendar } from "lucide-react";
 
 interface StrategyConfig {
+  candleInterval: number;
   smaPeriod: number;
+  setupTime: string;
   entryOffset: number;
   slOffset: number;
   riskRewardRatio: number;
   minWickPercent: number;
+  skipCandles: number;
+  entryWindow: string;
+  forceExit: string;
   positionSize: number;
 }
 
 const defaultConfig: StrategyConfig = {
+  candleInterval: 3,
   smaPeriod: 50,
+  setupTime: "10:00 AM",
   entryOffset: 0.10,
   slOffset: 0.15,
   riskRewardRatio: 5,
   minWickPercent: 15,
+  skipCandles: 2,
+  entryWindow: "1:00 PM",
+  forceExit: "3:00 PM",
   positionSize: 100000,
 };
 
@@ -29,20 +39,57 @@ export function StrategyOverview({ config = defaultConfig }: { config?: Strategy
         </CardHeader>
         <CardContent>
           <p className="text-muted-foreground">
-            Advanced SMA-based rejection strategy with 10 AM setup detection, 
-            precise entry timing, and risk-managed position sizing.
+            3-minute candle SMA rejection strategy. Setup at 10 AM (09:57-09:59 candle), 
+            wick rejection confirmation, 2-candle skip period, and 5:1 risk-reward with daily exit at 3 PM.
           </p>
         </CardContent>
       </Card>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <MetricCard
+          title="Candle Interval"
+          value={`${config.candleInterval} min`}
+          icon={BarChart3}
+          description="Chart timeframe"
+        />
+        
+        <MetricCard
+          title="Setup Time"
+          value={config.setupTime}
+          icon={Clock}
+          description="09:57-09:59 candle"
+        />
+        
+        <MetricCard
           title="SMA Period"
           value={config.smaPeriod}
           icon={TrendingUp}
-          description="Moving average period"
+          description="Moving average"
         />
         
+        <MetricCard
+          title="Skip Candles"
+          value={config.skipCandles}
+          icon={Timer}
+          description="After rejection"
+        />
+        
+        <MetricCard
+          title="Entry Window"
+          value={`Until ${config.entryWindow}`}
+          icon={Calendar}
+          description="Trade entry limit"
+        />
+        
+        <MetricCard
+          title="Force Exit"
+          value={config.forceExit}
+          icon={Clock}
+          description="End of day exit"
+        />
+      </div>
+      
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <MetricCard
           title="Entry Offset"
           value={`₹${config.entryOffset}`}
