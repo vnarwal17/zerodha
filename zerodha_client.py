@@ -3,50 +3,25 @@ import json
 import logging
 from datetime import datetime, time, timedelta
 from typing import Optional, List, Dict, Any
-from kiteconnect import KiteConnect
+from kiteconnect import KiteConnect, KiteTicker
 import pandas as pd
 
 logger = logging.getLogger(__name__)
 
 class ZerodhaClient:
     def __init__(self):
-        # Try to get API credentials from environment variables first
-        self.api_key = os.getenv('ZERODHA_API_KEY', 'your_zerodha_api_key')
-        self.api_secret = os.getenv('ZERODHA_API_SECRET', 'your_zerodha_api_secret')
+        # Use your working credentials
+        self.api_key = "graf84f2wec04nbl"
+        self.api_secret = "rcaxwf44jd6en5yujwzgmm36hbwbffz6"
+        self.user_id = "YDD304"
         
-        # If no environment variables, try to load from config file
-        if self.api_key == 'your_zerodha_api_key':
-            self._load_config()
-        
-        if self.api_key == 'your_zerodha_api_key' or self.api_secret == 'your_zerodha_api_secret':
-            logger.warning("Using placeholder API credentials. Please set ZERODHA_API_KEY and ZERODHA_API_SECRET environment variables or create zerodha_config.json")
         self.kite = KiteConnect(api_key=self.api_key)
         self.access_token = None
-        self.user_id = None
         self.token_file = "access_token.json"
         self.instruments_cache = None
         
         # Load saved token if exists and valid
         self._load_saved_token()
-    
-    def _load_config(self):
-        """Load API credentials from config file"""
-        try:
-            if os.path.exists('zerodha_config.json'):
-                with open('zerodha_config.json', 'r') as f:
-                    config = json.load(f)
-                    self.api_key = config.get('api_key', self.api_key)
-                    self.api_secret = config.get('api_secret', self.api_secret)
-                    logger.info("Loaded API credentials from config file")
-        except Exception as e:
-            logger.error(f"Error loading config: {e}")
-    
-    def set_credentials(self, api_key: str, api_secret: str):
-        """Set API credentials at runtime"""
-        self.api_key = api_key
-        self.api_secret = api_secret
-        self.kite = KiteConnect(api_key=self.api_key)
-        logger.info("API credentials updated")
     
     def _load_saved_token(self):
         """Load saved access token if it exists and is valid"""
@@ -131,24 +106,24 @@ class ZerodhaClient:
             raise
     
     async def get_instruments(self) -> List[Dict[str, Any]]:
-        """Get available instruments"""
+        """Get available instruments with Nifty50/BankNifty flags"""
         try:
             if self.instruments_cache is None:
-                instruments = self.kite.instruments()
+                instruments = self.kite.instruments("NSE")
                 
                 # Filter for equity instruments
-                equity_instruments = [
-                    {
-                        'symbol': inst['tradingsymbol'],
-                        'name': inst['name'],
-                        'token': inst['instrument_token'],
-                        'exchange': inst['exchange'],
-                        'is_nifty50': inst['tradingsymbol'] in self.get_nifty50_symbols(),
-                        'is_banknifty': inst['tradingsymbol'] in self.get_banknifty_symbols()
-                    }
-                    for inst in instruments
-                    if inst['exchange'] == 'NSE' and inst['segment'] == 'NSE'
-                ]
+                equity_instruments = []
+                for inst in instruments:
+                    if inst['exchange'] == 'NSE' and inst['instrument_type'] == 'EQ':
+                        symbol = inst['tradingsymbol']
+                        equity_instruments.append({
+                            'symbol': symbol,
+                            'name': inst['name'],
+                            'token': inst['instrument_token'],
+                            'exchange': inst['exchange'],
+                            'is_nifty50': symbol in self.get_nifty50_symbols(),
+                            'is_banknifty': symbol in self.get_banknifty_symbols()
+                        })
                 
                 self.instruments_cache = equity_instruments
             
@@ -160,23 +135,20 @@ class ZerodhaClient:
     def get_nifty50_symbols(self) -> List[str]:
         """Get NIFTY 50 stock symbols"""
         return [
-            'ADANIPORTS', 'ASIANPAINT', 'AXISBANK', 'BAJAJ-AUTO', 'BAJFINANCE',
-            'BAJAJFINSV', 'BHARTIARTL', 'BPCL', 'BRITANNIA', 'CIPLA',
-            'COALINDIA', 'DIVISLAB', 'DRREDDY', 'EICHERMOT', 'GRASIM',
-            'HCLTECH', 'HDFC', 'HDFCBANK', 'HDFCLIFE', 'HEROMOTOCO',
-            'HINDALCO', 'HINDUNILVR', 'ICICIBANK', 'INDUSINDBK', 'INFY',
-            'IOC', 'ITC', 'JSWSTEEL', 'KOTAKBANK', 'LT', 'M&M',
-            'MARUTI', 'NESTLEIND', 'NTPC', 'ONGC', 'POWERGRID',
-            'RELIANCE', 'SBILIFE', 'SBIN', 'SHREECEM', 'SUNPHARMA',
-            'TATACONSUM', 'TATAMOTORS', 'TATASTEEL', 'TCS', 'TECHM',
-            'TITAN', 'ULTRACEMCO', 'UPL', 'WIPRO'
+            'RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'HINDUNILVR', 'ICICIBANK', 'HDFC', 'SBIN', 
+            'BHARTIARTL', 'KOTAKBANK', 'BAJFINANCE', 'LT', 'ITC', 'ASIANPAINT', 'AXISBANK', 
+            'DMART', 'SUNPHARMA', 'ULTRACEMCO', 'TITAN', 'NESTLEIND', 'WIPRO', 'MARUTI', 
+            'M&M', 'HCLTECH', 'NTPC', 'TATAMOTORS', 'POWERGRID', 'ONGC', 'JSWSTEEL', 'GRASIM',
+            'TATASTEEL', 'TECHM', 'INDUSINDBK', 'HINDALCO', 'DIVISLAB', 'DRREDDY', 'BAJAJFINSV',
+            'CIPLA', 'BPCL', 'BRITANNIA', 'SBILIFE', 'EICHERMOT', 'UPL', 'COALINDIA', 'SHREECEM',
+            'BAJAJ-AUTO', 'HEROMOTOCO', 'TATACONSUM', 'ADANIPORTS', 'APOLLOHOSP'
         ]
     
     def get_banknifty_symbols(self) -> List[str]:
         """Get Bank NIFTY stock symbols"""
         return [
-            'AXISBANK', 'BANDHANBNK', 'FEDERALBNK', 'HDFCBANK', 'ICICIBANK',
-            'IDFCFIRSTB', 'INDUSINDBK', 'KOTAKBANK', 'PNB', 'SBIN'
+            'HDFCBANK', 'ICICIBANK', 'KOTAKBANK', 'AXISBANK', 'SBIN', 'INDUSINDBK',
+            'BANDHANBNK', 'FEDERALBNK', 'IDFCFIRSTB', 'PNB', 'BANKBARODA', 'AUBANK'
         ]
     
     async def get_historical_data(self, instrument_token: int, from_date: str, to_date: str, interval: str) -> List[Dict]:
@@ -207,11 +179,12 @@ class ZerodhaClient:
         try:
             order_params = {
                 'tradingsymbol': symbol,
-                'exchange': 'NSE',
+                'exchange': self.kite.EXCHANGE_NSE,
                 'transaction_type': transaction_type,
                 'quantity': quantity,
-                'product': 'MIS',  # Intraday
-                'order_type': 'MARKET' if price is None else 'LIMIT',
+                'product': self.kite.PRODUCT_MIS,  # Intraday
+                'order_type': self.kite.ORDER_TYPE_MARKET if price is None else self.kite.ORDER_TYPE_LIMIT,
+                'variety': self.kite.VARIETY_REGULAR
             }
             
             if price:
@@ -231,3 +204,7 @@ class ZerodhaClient:
         except Exception as e:
             logger.error(f"Positions error: {e}")
             return []
+    
+    def get_kite_instance(self):
+        """Get the KiteConnect instance for advanced operations"""
+        return self.kite
