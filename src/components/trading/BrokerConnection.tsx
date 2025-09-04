@@ -3,12 +3,11 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Wifi, WifiOff, LogIn, User, AlertCircle, CheckCircle } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Wifi, WifiOff, LogIn, User, AlertCircle, CheckCircle, Link as LinkIcon } from "lucide-react";
 import { useState, useEffect } from "react";
 import { tradingApi } from "@/services/trading-api";
 import { useToast } from "@/hooks/use-toast";
-import { CredentialsSetup } from "./CredentialsSetup";
 
 interface BrokerConnectionProps {
   isConnected: boolean;
@@ -20,7 +19,7 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
   const [requestToken, setRequestToken] = useState("");
   const [loginUrl, setLoginUrl] = useState("");
   const [userInfo, setUserInfo] = useState<any>(null);
-  const [showCredentialsSetup, setShowCredentialsSetup] = useState(false);
+  const [showConnectionModal, setShowConnectionModal] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -34,7 +33,6 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
         setUserInfo(response.data);
         onConnectionChange(true, response.data);
       } else if (response.user_id) {
-        // Handle direct response format from main.py
         setUserInfo(response);
         onConnectionChange(true, response);
       } else {
@@ -46,31 +44,25 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
     }
   };
 
-  const handleConnect = async () => {
+  const handleConnectClick = async () => {
     setLoading(true);
     try {
-      // First call to get login URL
       const response = await tradingApi.login();
       
       if (response.status === 'requires_login' && response.login_url) {
         setLoginUrl(response.login_url);
-        // Automatically open the login URL
-        window.open(response.login_url, '_blank');
+        setShowConnectionModal(true);
+      } else if (response.status === 'success') {
+        // Already connected
+        setUserInfo(response);
+        onConnectionChange(true, response);
         toast({
-          title: "Login Window Opened",
-          description: "Complete login and copy the request token from the redirect URL",
-        });
-      } else if (response.message && response.message.includes('placeholder')) {
-        // Show credentials setup if using placeholder credentials
-        setShowCredentialsSetup(true);
-        toast({
-          title: "API Credentials Required",
-          description: "Please set up your Zerodha API credentials first",
-          variant: "destructive",
+          title: "Already Connected",
+          description: "You are already connected to Zerodha",
         });
       } else {
         toast({
-          title: "Error",
+          title: "Connection Error",
           description: response.message || "Failed to get login URL",
           variant: "destructive",
         });
@@ -86,7 +78,17 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
     }
   };
 
-  const handleTokenSubmit = async () => {
+  const handleOpenLogin = () => {
+    if (loginUrl) {
+      window.open(loginUrl, '_blank');
+      toast({
+        title: "Login Window Opened",
+        description: "Complete login and copy the request token from the URL",
+      });
+    }
+  };
+
+  const handleTokenConnect = async () => {
     if (!requestToken.trim()) {
       toast({
         title: "Token Required",
@@ -105,20 +107,15 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
         onConnectionChange(true, response);
         setRequestToken("");
         setLoginUrl("");
-        
-        // Save token with expiry (6:30 AM next day)
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        tomorrow.setHours(6, 30, 0, 0);
-        localStorage.setItem('zerodha_token_expiry', tomorrow.getTime().toString());
+        setShowConnectionModal(false);
         
         toast({
           title: "Connected Successfully",
-          description: `Welcome ${response.user_id}. Token saved until 6:30 AM tomorrow.`,
+          description: `Welcome ${response.user_id}`,
         });
       } else {
         toast({
-          title: "Login Failed",
+          title: "Connection Failed",
           description: response.message || "Invalid token",
           variant: "destructive",
         });
@@ -134,154 +131,144 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
     }
   };
 
-  const openLoginPage = () => {
-    if (loginUrl) {
-      window.open(loginUrl, '_blank');
-    }
+  const handleCancel = () => {
+    setShowConnectionModal(false);
+    setRequestToken("");
+    setLoginUrl("");
   };
-
-  const handleCredentialsSet = () => {
-    setShowCredentialsSetup(false);
-    toast({
-      title: "Credentials Configured",
-      description: "You can now proceed with Zerodha login",
-    });
-  };
-
-  if (showCredentialsSetup) {
-    return <CredentialsSetup onCredentialsSet={handleCredentialsSet} />;
-  }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center space-x-2">
-          {isConnected ? (
-            <>
-              <Wifi className="h-5 w-5 text-success" />
-              <span>Broker Connection</span>
-            </>
-          ) : (
-            <>
-              <WifiOff className="h-5 w-5 text-destructive" />
-              <span>Connect to Broker</span>
-            </>
-          )}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {isConnected ? (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <StatusBadge variant="success">
-                <CheckCircle className="h-3 w-3 mr-1" />
-                Connected
-              </StatusBadge>
-              <Button variant="outline" size="sm" onClick={checkConnection}>
-                Refresh
-              </Button>
-            </div>
-            
-            {userInfo && (
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <User className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">
-                    <span className="text-muted-foreground">User ID:</span>
-                    <span className="font-medium ml-1">{userInfo.user_id}</span>
-                  </span>
-                </div>
-                {userInfo.user_name && (
-                  <div className="text-sm">
-                    <span className="text-muted-foreground">Name:</span>
-                    <span className="font-medium ml-1">{userInfo.user_name}</span>
-                  </div>
-                )}
-              </div>
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center space-x-2">
+            {isConnected ? (
+              <>
+                <Wifi className="h-5 w-5 text-success" />
+                <span>Broker Connection</span>
+              </>
+            ) : (
+              <>
+                <WifiOff className="h-5 w-5 text-destructive" />
+                <span>Connect to Broker</span>
+              </>
             )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {isConnected ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <StatusBadge variant="success">
+                  <CheckCircle className="h-3 w-3 mr-1" />
+                  Connected
+                </StatusBadge>
+                <Button variant="outline" size="sm" onClick={checkConnection}>
+                  Refresh
+                </Button>
+              </div>
+              
+              {userInfo && (
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <User className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm">
+                      <span className="text-muted-foreground">User ID:</span>
+                      <span className="font-medium ml-1">{userInfo.user_id}</span>
+                    </span>
+                  </div>
+                  {userInfo.user_name && (
+                    <div className="text-sm">
+                      <span className="text-muted-foreground">Name:</span>
+                      <span className="font-medium ml-1">{userInfo.user_name}</span>
+                    </div>
+                  )}
+                </div>
+              )}
 
-            <Alert>
-              <CheckCircle className="h-4 w-4" />
-              <AlertDescription>
-                Ready for live trading. All API calls will be executed on your connected account.
-              </AlertDescription>
-            </Alert>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {!loginUrl ? (
+              <Alert>
+                <CheckCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Ready for live trading. All API calls will be executed on your connected account.
+                </AlertDescription>
+              </Alert>
+            </div>
+          ) : (
+            <div className="space-y-4">
               <Button
-                onClick={handleConnect}
+                onClick={handleConnectClick}
                 disabled={loading}
                 className="w-full"
               >
                 <LogIn className="h-4 w-4 mr-2" />
                 {loading ? "Connecting..." : "Connect to Zerodha"}
               </Button>
-            ) : (
-              <div className="space-y-3">
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    <div className="space-y-2">
-                      <p>1. Click "Open Zerodha Login" to visit the login page</p>
-                      <p>2. Complete login with your Zerodha credentials</p>
-                      <p>3. After login, you'll be redirected to a URL containing the request token</p>
-                      <p>4. Copy the token from the URL (after ?request_token=) and paste it below</p>
-                      <p className="text-xs text-muted-foreground">Note: Tokens expire daily and need to be regenerated</p>
-                    </div>
-                  </AlertDescription>
-                </Alert>
 
-                <Button
-                  onClick={openLoginPage}
-                  variant="outline"
-                  className="w-full"
-                >
-                  <LogIn className="h-4 w-4 mr-2" />
-                  Open Zerodha Login
-                </Button>
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Connect to your Zerodha account to enable live trading. Your credentials are secure and handled directly by Zerodha's API.
+                </AlertDescription>
+              </Alert>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-                <div className="space-y-2">
-                  <Label htmlFor="request_token">Request Token from Redirect URL</Label>
-                  <Input
-                    id="request_token"
-                    placeholder="Paste request token here (e.g., xyz123abc456)"
-                    value={requestToken}
-                    onChange={(e) => setRequestToken(e.target.value)}
-                    className="font-mono text-xs"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    The token will be in the redirect URL: https://kite.zerodha.com/connect/login?request_token=<strong>YOUR_TOKEN</strong>
-                  </p>
-                </div>
+      {/* Connection Modal */}
+      <Dialog open={showConnectionModal} onOpenChange={setShowConnectionModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Steps to connect:</DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="bg-accent/50 p-4 rounded-lg">
+              <ol className="space-y-2 text-sm">
+                <li>1. Click "Open Zerodha Login" below</li>
+                <li>2. Login with your credentials and complete 2FA</li>
+                <li>3. Copy the 'request_token' from the redirected URL</li>
+                <li>4. Paste it below and click Connect</li>
+              </ol>
+            </div>
 
-                <Button
-                  onClick={handleTokenSubmit}
-                  disabled={loading || !requestToken.trim()}
-                  className="w-full"
-                >
-                  {loading ? "Connecting..." : "Complete Connection"}
-                </Button>
-              </div>
-            )}
+            <Button
+              onClick={handleOpenLogin}
+              className="w-full"
+              variant="default"
+            >
+              <LinkIcon className="h-4 w-4 mr-2" />
+              Open Zerodha Login
+            </Button>
 
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                <div className="space-y-1">
-                  <p>Connect to your Zerodha account to enable live trading.</p>
-                  <p className="text-xs text-muted-foreground">
-                    • Your credentials are secure and handled directly by Zerodha's API<br/>
-                    • Access tokens expire daily and need to be regenerated<br/>
-                    • This follows Zerodha's security requirements for API access
-                  </p>
-                </div>
-              </AlertDescription>
-            </Alert>
+            <div className="space-y-2">
+              <Input
+                placeholder="Paste request_token here (from URL after login)"
+                value={requestToken}
+                onChange={(e) => setRequestToken(e.target.value)}
+                className="font-mono text-sm"
+              />
+            </div>
+
+            <div className="flex space-x-3">
+              <Button
+                variant="destructive"
+                onClick={handleCancel}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleTokenConnect}
+                disabled={loading || !requestToken.trim()}
+                className="flex-1"
+              >
+                {loading ? "Connecting..." : "🔗 Connect"}
+              </Button>
+            </div>
           </div>
-        )}
-      </CardContent>
-    </Card>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
