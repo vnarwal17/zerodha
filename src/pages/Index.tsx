@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { TradingHeader } from "@/components/trading/TradingHeader";
 import { BrokerConnection } from "@/components/trading/BrokerConnection";
+import { BalanceDisplay } from "@/components/trading/BalanceDisplay";
 import { SymbolSelection } from "@/components/trading/SymbolSelection";
 import { TradingSettingsComponent } from "@/components/trading/TradingSettingsComponent";
 import { StrategyOverview } from "@/components/trading/StrategyOverview";
@@ -212,11 +213,12 @@ const Index = () => {
           </TabsList>
 
           <TabsContent value="setup" className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <BrokerConnection
                 isConnected={isConnected}
                 onConnectionChange={handleConnectionChange}
               />
+              <BalanceDisplay isConnected={isConnected} />
               <MarketStatus
                 isMarketOpen={liveStatus?.market_open}
               />
@@ -230,7 +232,10 @@ const Index = () => {
           </TabsContent>
 
           <TabsContent value="dashboard" className="space-y-6">
-            <StrategyOverview />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              <StrategyOverview />
+              <BalanceDisplay isConnected={isConnected} />
+            </div>
             
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2">

@@ -118,6 +118,11 @@ class TradingApiService {
     return this.callEdgeFunction('/live_status');
   }
 
+  // Balance
+  async getBalance(): Promise<ApiResponse<{ balance: any; user_id: string }>> {
+    return this.callEdgeFunction('/get_balance');
+  }
+
   // Settings
   async updateSettings(settings: Partial<TradingSettings>): Promise<ApiResponse<{}>> {
     return this.callEdgeFunction('/update_settings', settings);

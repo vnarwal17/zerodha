@@ -316,6 +316,54 @@ serve(async (req) => {
           }, { headers: corsHeaders })
         break
 
+      case '/get_balance':
+        const { data: balanceSessionData } = await supabaseClient
+          .from('trading_sessions')
+          .select('access_token, user_id')
+          .eq('id', 1)
+          .maybeSingle()
+
+        if (!balanceSessionData?.access_token) {
+          return Response.json({
+            status: "error",
+            message: "Not authenticated. Please login first."
+          }, { headers: corsHeaders })
+        }
+
+        try {
+          // Fetch funds from Zerodha API
+          const fundsResponse = await fetch(`${KITE_API_BASE}/user/margins`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `token ${balanceSessionData.access_token}`,
+              'X-Kite-Version': '3'
+            }
+          })
+
+          const fundsData = await fundsResponse.json()
+
+          if (fundsResponse.ok && fundsData.status === 'success') {
+            return Response.json({
+              status: "success",
+              data: {
+                balance: fundsData.data,
+                user_id: balanceSessionData.user_id
+              }
+            }, { headers: corsHeaders })
+          } else {
+            return Response.json({
+              status: "error",
+              message: fundsData.message || "Failed to fetch balance"
+            }, { headers: corsHeaders })
+          }
+        } catch (error) {
+          return Response.json({
+            status: "error",
+            message: "Failed to fetch balance from Zerodha API"
+          }, { headers: corsHeaders })
+        }
+        break
+
       default:
         return Response.json({
           status: "error",
