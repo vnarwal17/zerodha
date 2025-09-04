@@ -958,28 +958,32 @@ serve(async (req) => {
         break
 
       case '/place_test_order':
-        const { test_symbol = 'SBIN' } = requestData
-        
-        const { data: testSessionData } = await supabaseClient
-          .from('trading_sessions')
-          .select('access_token')
-          .eq('id', 1)
-          .maybeSingle()
-
-        const { data: testApiKeyData } = await supabaseClient
-          .from('trading_credentials')
-          .select('api_key')
-          .eq('id', 1)
-          .maybeSingle()
-
-        if (!testSessionData?.access_token || !testApiKeyData?.api_key) {
-          return Response.json({
-            status: "error",
-            message: "Not authenticated. Please login first."
-          }, { headers: corsHeaders })
-        }
-
         try {
+          const { test_symbol = 'SBIN' } = requestData
+          console.log('Test order request for symbol:', test_symbol);
+          
+          const { data: testSessionData } = await supabaseClient
+            .from('trading_sessions')
+            .select('access_token')
+            .eq('id', 1)
+            .maybeSingle()
+
+          const { data: testApiKeyData } = await supabaseClient
+            .from('trading_credentials')
+            .select('api_key')
+            .eq('id', 1)
+            .maybeSingle()
+
+          console.log('Session data:', !!testSessionData?.access_token);
+          console.log('API key data:', !!testApiKeyData?.api_key);
+
+          if (!testSessionData?.access_token || !testApiKeyData?.api_key) {
+            return Response.json({
+              status: "error",
+              message: "Not authenticated. Please login first."
+            }, { headers: corsHeaders })
+          }
+
           // Place a minimal test order - 1 share of SBIN (State Bank of India)
           const testOrderParams = new URLSearchParams({
             tradingsymbol: test_symbol,
@@ -1006,21 +1010,26 @@ serve(async (req) => {
           })
 
           const testOrderData = await testOrderResponse.json()
-          console.log('Test order response:', testOrderData);
+          console.log('Test order response status:', testOrderResponse.status);
+          console.log('Test order response data:', testOrderData);
 
           if (testOrderResponse.ok && testOrderData.status === 'success') {
             // Log the test order
-            await supabaseClient
-              .from('trade_logs')
-              .insert({
-                symbol: test_symbol,
-                action: 'BUY',
-                quantity: 1,
-                order_id: testOrderData.data.order_id,
-                order_type: 'MARKET',
-                status: 'TEST_ORDER_PLACED',
-                timestamp: new Date().toISOString()
-              })
+            try {
+              await supabaseClient
+                .from('trade_logs')
+                .insert({
+                  symbol: test_symbol,
+                  action: 'BUY',
+                  quantity: 1,
+                  order_id: testOrderData.data.order_id,
+                  order_type: 'MARKET',
+                  status: 'TEST_ORDER_PLACED',
+                  timestamp: new Date().toISOString()
+                })
+            } catch (logError) {
+              console.error('Error logging test order:', logError);
+            }
 
             return Response.json({
               status: "success",
@@ -1034,14 +1043,14 @@ serve(async (req) => {
           } else {
             return Response.json({
               status: "error",
-              message: testOrderData.message || `Failed to place test order for ${test_symbol}`
+              message: testOrderData.message || `Failed to place test order for ${test_symbol}. API Response: ${JSON.stringify(testOrderData)}`
             }, { headers: corsHeaders })
           }
         } catch (error) {
           console.error('Test order error:', error);
           return Response.json({
             status: "error",
-            message: "Failed to execute test order - Check API connection"
+            message: `Failed to execute test order: ${error.message}`
           }, { headers: corsHeaders })
         }
         break
