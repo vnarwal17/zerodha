@@ -792,6 +792,13 @@ serve(async (req) => {
           .eq('id', 1)
           .maybeSingle()
 
+        // Get trading settings
+        const { data: settingsData } = await supabaseClient
+          .from('trading_settings')
+          .select('settings')
+          .eq('id', 1)
+          .maybeSingle()
+
         if (!tradeSessionData?.access_token || !tradeApiKeyData?.api_key) {
           return Response.json({
             status: "error",
@@ -800,15 +807,33 @@ serve(async (req) => {
         }
 
         try {
+          // Default settings if none are saved
+          const settings = settingsData?.settings || {
+            product: 'MIS',
+            validity: 'DAY', 
+            market_protection: -1,
+            tag: 'ALGO_TRADE'
+          };
+
+          // Build order parameters according to Zerodha API spec
           const orderParams = new URLSearchParams({
             tradingsymbol: trade_symbol,
             exchange: 'NSE',
             transaction_type: action, // BUY or SELL
-            order_type: order_type,
+            order_type: order_type, // MARKET, LIMIT, etc.
             quantity: quantity.toString(),
-            product: 'MIS', // Intraday
-            validity: 'DAY'
-          })
+            product: settings.product, // MIS, CNC, NRML
+            validity: settings.validity, // DAY, IOC, TTL
+            market_protection: settings.market_protection.toString(),
+            tag: settings.tag || 'ALGO_TRADE'
+          });
+
+          // Add optional parameters if they exist
+          if (settings.disclosed_quantity && settings.disclosed_quantity > 0) {
+            orderParams.append('disclosed_quantity', settings.disclosed_quantity.toString());
+          }
+
+          console.log('Placing order with params:', Object.fromEntries(orderParams));
 
           const orderResponse = await fetch(`${KITE_API_BASE}/orders/regular`, {
             method: 'POST',

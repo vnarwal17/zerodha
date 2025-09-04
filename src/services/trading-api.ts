@@ -66,6 +66,12 @@ export interface TradingSettings {
   risk_percent: number;
   leverage: number;
   position_sizing: 'fixed_capital' | 'fixed_risk';
+  // Zerodha-specific order parameters
+  product: 'MIS' | 'CNC' | 'NRML'; // Margin product
+  validity: 'DAY' | 'IOC' | 'TTL'; // Order validity
+  market_protection: number; // Market protection percentage (-1 for auto, 0 for none, 1-100 for custom)
+  disclosed_quantity?: number; // Quantity to disclose publicly
+  tag?: string; // Order tag (alphanumeric, max 20 chars)
 }
 
 export interface TradeLog {

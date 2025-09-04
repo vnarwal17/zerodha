@@ -20,6 +20,11 @@ export function TradingSettingsComponent({ isConnected }: TradingSettingsProps) 
     risk_percent: 2,
     leverage: 1,
     position_sizing: 'fixed_capital',
+    product: 'MIS', // Intraday
+    validity: 'DAY', // Day order
+    market_protection: -1, // Auto protection
+    disclosed_quantity: 0,
+    tag: 'ALGO_TRADE',
   });
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
@@ -71,6 +76,11 @@ export function TradingSettingsComponent({ isConnected }: TradingSettingsProps) 
       risk_percent: 2,
       leverage: 1,
       position_sizing: 'fixed_capital',
+      product: 'MIS',
+      validity: 'DAY',
+      market_protection: -1,
+      disclosed_quantity: 0,
+      tag: 'ALGO_TRADE',
     });
     toast({
       title: "Settings Reset",
@@ -174,6 +184,94 @@ export function TradingSettingsComponent({ isConnected }: TradingSettingsProps) 
           <p className="text-sm text-muted-foreground">
             Multiplier for position size (use with caution)
           </p>
+        </div>
+
+        {/* Zerodha Order Settings */}
+        <div className="space-y-4 pt-4 border-t border-border">
+          <div className="space-y-2">
+            <Label className="text-base font-medium">Zerodha Order Settings</Label>
+            <p className="text-sm text-muted-foreground">
+              Configure order parameters for Zerodha API
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Product Type</Label>
+              <Select
+                value={settings.product}
+                onValueChange={(value) => handleSettingChange('product', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MIS">MIS (Intraday)</SelectItem>
+                  <SelectItem value="CNC">CNC (Delivery)</SelectItem>
+                  <SelectItem value="NRML">NRML (Normal)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-sm text-muted-foreground">
+                Margin product for order execution
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Order Validity</Label>
+              <Select
+                value={settings.validity}
+                onValueChange={(value) => handleSettingChange('validity', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="DAY">DAY (Valid till end of day)</SelectItem>
+                  <SelectItem value="IOC">IOC (Immediate or Cancel)</SelectItem>
+                  <SelectItem value="TTL">TTL (Time to Live)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-sm text-muted-foreground">
+                How long the order should remain active
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Market Protection (%)</Label>
+              <Select
+                value={settings.market_protection.toString()}
+                onValueChange={(value) => handleSettingChange('market_protection', parseInt(value))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="-1">Auto Protection</SelectItem>
+                  <SelectItem value="0">No Protection</SelectItem>
+                  <SelectItem value="3">3% Protection</SelectItem>
+                  <SelectItem value="5">5% Protection</SelectItem>
+                  <SelectItem value="10">10% Protection</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-sm text-muted-foreground">
+                Protection against market volatility
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Order Tag</Label>
+              <Input
+                type="text"
+                maxLength={20}
+                value={settings.tag || ''}
+                onChange={(e) => handleSettingChange('tag', e.target.value)}
+                placeholder="ALGO_TRADE"
+              />
+              <p className="text-sm text-muted-foreground">
+                Tag to identify your algo orders (max 20 chars)
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Strategy Parameters Display */}
