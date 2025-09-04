@@ -43,12 +43,12 @@ export interface LiveStatus {
   }>;
 }
 
-export interface TradingSettings {
-  dry_run: boolean;
-  fixed_capital_per_trade: number;
-  risk_percent: number;
-  leverage: number;
-  position_sizing: 'fixed_capital' | 'fixed_risk';
+export interface StrategySignal {
+  symbol: string;
+  action: 'BUY' | 'SELL' | 'HOLD';
+  price: number;
+  quantity: number;
+  reason: string;
 }
 
 export interface CandleData {
@@ -60,12 +60,12 @@ export interface CandleData {
   volume: number;
 }
 
-export interface StrategySignal {
-  symbol: string;
-  action: 'BUY' | 'SELL' | 'HOLD';
-  price: number;
-  quantity: number;
-  reason: string;
+export interface TradingSettings {
+  dry_run: boolean;
+  fixed_capital_per_trade: number;
+  risk_percent: number;
+  leverage: number;
+  position_sizing: 'fixed_capital' | 'fixed_risk';
 }
 
 export interface TradeLog {

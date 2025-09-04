@@ -9,6 +9,7 @@ import { LivePositions } from "@/components/trading/LivePositions";
 import { MarketStatus } from "@/components/trading/MarketStatus";
 import { TradingLogs } from "@/components/trading/TradingLogs";
 import { PerformanceMetrics } from "@/components/trading/PerformanceMetrics";
+import { StrategyMonitor } from "@/components/trading/StrategyMonitor";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { tradingApi, TradingSymbol, LiveStatus } from "@/services/trading-api";
 import { useToast } from "@/hooks/use-toast";
@@ -237,30 +238,33 @@ const Index = () => {
               <BalanceDisplay isConnected={isConnected} />
             </div>
             
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2">
-                <LivePositions 
-                  positions={liveStatus?.positions_detail?.map(pos => ({
-                    id: pos.symbol,
-                    symbol: pos.symbol,
-                    direction: pos.direction,
-                    entryPrice: pos.entry_price,
-                    currentPrice: pos.current_price || pos.entry_price,
-                    stopLoss: pos.stop_loss,
-                    target: pos.target,
-                    quantity: pos.quantity,
-                    status: pos.status as "active" | "closed",
-                    unrealizedPnl: pos.unrealized_pnl,
-                    entryTime: pos.entry_time,
-                  }))}
-                  onClosePosition={handleClosePosition} 
-                />
-              </div>
-              <div className="space-y-6">
-                <MarketStatus
-                  isMarketOpen={liveStatus?.market_open}
-                />
-              </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              <StrategyMonitor 
+                selectedSymbols={selectedSymbols}
+                isLiveTrading={isTrading}
+              />
+              <MarketStatus
+                isMarketOpen={liveStatus?.market_open}
+              />
+            </div>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
+              <LivePositions 
+                positions={liveStatus?.positions_detail?.map(pos => ({
+                  id: pos.symbol,
+                  symbol: pos.symbol,
+                  direction: pos.direction,
+                  entryPrice: pos.entry_price,
+                  currentPrice: pos.current_price || pos.entry_price,
+                  stopLoss: pos.stop_loss,
+                  target: pos.target,
+                  quantity: pos.quantity,
+                  status: pos.status as "active" | "closed",
+                  unrealizedPnl: pos.unrealized_pnl,
+                  entryTime: pos.entry_time,
+                }))}
+                onClosePosition={handleClosePosition} 
+              />
             </div>
           </TabsContent>
 
