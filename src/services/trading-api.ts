@@ -87,7 +87,7 @@ class TradingApiService {
   }
 
   // Authentication
-  async login(requestToken?: string): Promise<ApiResponse<{ user_id: string; login_url?: string }>> {
+  async login(requestToken?: string): Promise<ApiResponse<{ user_id: string; user_name?: string; login_url?: string }>> {
     return this.callEdgeFunction('/login', { request_token: requestToken });
   }
 

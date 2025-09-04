@@ -79,7 +79,7 @@ serve(async (req) => {
             .from('trading_credentials')
             .select('*')
             .eq('id', 1)
-            .single()
+            .maybeSingle()
 
           if (!credentialsData) {
             return Response.json({
@@ -160,7 +160,7 @@ serve(async (req) => {
             .from('trading_credentials')
             .select('api_key')
             .eq('id', 1)
-            .single()
+            .maybeSingle()
 
           if (!credentialsData) {
             return Response.json({
@@ -183,7 +183,7 @@ serve(async (req) => {
           .from('trading_sessions')
           .select('*')
           .eq('id', 1)
-          .single()
+          .maybeSingle()
 
         if (sessionData && sessionData.access_token && sessionData.status === 'authenticated') {
           return Response.json({
@@ -271,17 +271,17 @@ serve(async (req) => {
         break
 
       case '/live_status':
-          const { data } = await supabaseClient
-            .from('trading_sessions')
-            .select('*')
-            .eq('id', 1)
-            .single()
+        const { data: statusData } = await supabaseClient
+          .from('trading_sessions')
+          .select('*')
+          .eq('id', 1)
+          .maybeSingle()
 
           return Response.json({
             status: "success",
             data: {
               live_status: {
-                is_trading: data?.trading_active || false,
+                is_trading: statusData?.trading_active || false,
                 market_open: true,
                 active_positions: [],
                 logs: [

@@ -58,22 +58,26 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
     setLoading(true);
     try {
       const response = await tradingApi.login();
+      console.log('Login response:', response);
       
-      if (response.status === 'requires_login' && response.login_url) {
-        setLoginUrl(response.login_url);
+      if (response.status === 'requires_login' && response.data?.login_url) {
+        setLoginUrl(response.data.login_url);
         setShowConnectionModal(true);
+        toast({
+          title: "Authentication Required",
+          description: "Please complete Zerodha login in the modal",
+        });
       } else if (response.status === 'success') {
-        // Already connected
-        setUserInfo(response);
-        onConnectionChange(true, response);
+        setUserInfo(response.data);
+        onConnectionChange(true, response.data);
         toast({
           title: "Already Connected",
           description: "You are already connected to Zerodha",
         });
       } else {
         toast({
-          title: "Connection Error",
-          description: response.message || "Failed to get login URL",
+          title: "Error",
+          description: response.message || "Failed to initiate login",
           variant: "destructive",
         });
       }
@@ -81,7 +85,7 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
       console.error('Connection failed:', error);
       toast({
         title: "Connection Error", 
-        description: "Failed to connect to trading backend. Please check your internet connection and try again.",
+        description: "Failed to connect to trading backend. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -103,7 +107,7 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
     if (!requestToken.trim()) {
       toast({
         title: "Token Required",
-        description: "Please enter the request token",
+        description: "Please enter the request token from the URL",
         variant: "destructive",
       });
       return;
@@ -111,23 +115,26 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
 
     setLoading(true);
     try {
+      console.log('Attempting login with token:', requestToken);
       const response = await tradingApi.login(requestToken);
+      console.log('Token login response:', response);
       
-      if (response.status === 'success' && response.user_id) {
-        setUserInfo(response);
-        onConnectionChange(true, response);
+      if (response.status === 'success' && response.data?.user_id) {
+        setUserInfo(response.data);
+        onConnectionChange(true, response.data);
         setRequestToken("");
         setLoginUrl("");
         setShowConnectionModal(false);
         
         toast({
-          title: "Connected Successfully",
-          description: `Welcome ${response.user_id}`,
+          title: "Connected Successfully! 🎉",
+          description: `Welcome ${response.data.user_name || response.data.user_id}`,
         });
       } else {
+        console.error('Token login failed:', response);
         toast({
-          title: "Connection Failed",
-          description: response.message || "Invalid token",
+          title: "Authentication Failed",
+          description: response.message || "Invalid request token. Please try again.",
           variant: "destructive",
         });
       }
@@ -135,7 +142,7 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
       console.error('Token connection failed:', error);
       toast({
         title: "Connection Error",
-        description: "Failed to authenticate with token. Please check your token and try again.",
+        description: "Failed to authenticate. Please check your token and try again.",
         variant: "destructive",
       });
     } finally {
@@ -307,11 +314,13 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
           
           <div className="space-y-4">
             <div className="bg-accent/50 p-4 rounded-lg">
+              <h4 className="font-medium mb-2">🔗 Connect to Zerodha:</h4>
               <ol className="space-y-2 text-sm">
                 <li>1. Click "Open Zerodha Login" below</li>
-                <li>2. Login with your credentials and complete 2FA</li>
-                <li>3. Copy the 'request_token' from the redirected URL</li>
-                <li>4. Paste it below and click Connect</li>
+                <li>2. Login with your Zerodha credentials and complete 2FA</li>
+                <li>3. After login, you'll be redirected to a URL containing "request_token="</li>
+                <li>4. Copy ONLY the token value (after request_token=) and paste below</li>
+                <li>5. Click "🔗 Complete Connection"</li>
               </ol>
             </div>
 
@@ -319,23 +328,29 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
               onClick={handleOpenLogin}
               className="w-full"
               variant="default"
+              size="lg"
             >
-              <LinkIcon className="h-4 w-4 mr-2" />
+              <ExternalLink className="h-4 w-4 mr-2" />
               Open Zerodha Login
             </Button>
 
             <div className="space-y-2">
+              <Label htmlFor="request_token">Request Token from URL:</Label>
               <Input
-                placeholder="Paste request_token here (from URL after login)"
+                id="request_token"
+                placeholder="Paste the request_token value here"
                 value={requestToken}
                 onChange={(e) => setRequestToken(e.target.value)}
                 className="font-mono text-sm"
               />
+              <p className="text-xs text-muted-foreground">
+                Example: If URL is "...request_token=abc123&...", paste only "abc123"
+              </p>
             </div>
 
             <div className="flex space-x-3">
               <Button
-                variant="destructive"
+                variant="outline"
                 onClick={handleCancel}
                 className="flex-1"
               >
@@ -345,8 +360,9 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
                 onClick={handleTokenConnect}
                 disabled={loading || !requestToken.trim()}
                 className="flex-1"
+                size="lg"
               >
-                {loading ? "Connecting..." : "🔗 Connect"}
+                {loading ? "Connecting..." : "🔗 Complete Connection"}
               </Button>
             </div>
           </div>
