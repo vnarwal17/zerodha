@@ -253,7 +253,7 @@ serve(async (req) => {
                 console.log('Number of lines:', lines.length)
                 
                 // Parse CSV data - Include all NSE equity instruments
-                for (let i = 1; i < lines.length && instruments.length < 500; i++) {
+                for (let i = 1; i < lines.length; i++) {
                   const cols = lines[i].split(',')
                   if (cols.length >= 8) {
                     const symbol = cols[2]?.replace(/"/g, '')
