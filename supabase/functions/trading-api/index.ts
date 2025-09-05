@@ -239,6 +239,139 @@ serve(async (req) => {
           message: "Credentials saved successfully"
         }, { headers: corsHeaders })
 
+      case '/login':
+        const { request_token } = data
+        
+        if (request_token) {
+          // Get API credentials for authentication
+          const { data: credentialsData } = await supabaseClient
+            .from('trading_credentials')
+            .select('api_key, api_secret')
+            .eq('id', 1)
+            .maybeSingle()
+
+          if (!credentialsData) {
+            return Response.json({
+              status: "error",
+              message: "API credentials not found. Please set up credentials first."
+            }, { headers: corsHeaders })
+          }
+
+          // Calculate checksum: SHA-256 of api_key + request_token + api_secret
+          const checksum_string = credentialsData.api_key + request_token + credentialsData.api_secret
+          const encoder = new TextEncoder()
+          const data_array = encoder.encode(checksum_string)
+          const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', data_array)
+          const hashArray = Array.from(new Uint8Array(hashBuffer))
+          const checksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+
+          // Exchange request_token for access_token via Zerodha API
+          try {
+            const tokenResponse = await fetch(`${KITE_API_BASE}/session/token`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Kite-Version': '3'
+              },
+              body: new URLSearchParams({
+                api_key: credentialsData.api_key,
+                request_token: request_token,
+                checksum: checksum
+              })
+            })
+
+            const tokenData = await tokenResponse.json()
+
+            if (tokenResponse.ok && tokenData.status === 'success') {
+              // Store access token and user data
+              const { error: sessionError } = await supabaseClient
+                .from('trading_sessions')
+                .upsert({
+                  id: 1,
+                  access_token: tokenData.data.access_token,
+                  request_token: request_token,
+                  user_id: tokenData.data.user_id,
+                  user_name: tokenData.data.user_name,
+                  status: 'authenticated',
+                  login_time: tokenData.data.login_time,
+                  updated_at: new Date().toISOString()
+                })
+
+              if (sessionError) {
+                return Response.json({
+                  status: "error",
+                  message: sessionError.message
+                }, { headers: corsHeaders })
+              }
+
+              return Response.json({
+                status: "success",
+                message: "Login successful",
+                data: { 
+                  user_id: tokenData.data.user_id,
+                  user_name: tokenData.data.user_name
+                }
+              }, { headers: corsHeaders })
+            } else {
+              return Response.json({
+                status: "error",
+                message: tokenData.message || "Authentication failed"
+              }, { headers: corsHeaders })
+            }
+          } catch (error) {
+            return Response.json({
+              status: "error",
+              message: "Failed to authenticate with Zerodha API"
+            }, { headers: corsHeaders })
+          }
+        } else {
+          // Get API key for login URL
+          const { data: credentialsData } = await supabaseClient
+            .from('trading_credentials')
+            .select('api_key')
+            .eq('id', 1)
+            .maybeSingle()
+
+          if (!credentialsData) {
+            return Response.json({
+              status: "error",
+              message: "API credentials not found. Please set up credentials first."
+            }, { headers: corsHeaders })
+          }
+
+          const login_url = `https://kite.zerodha.com/connect/login?v=3&api_key=${credentialsData.api_key}`
+          return Response.json({
+            status: "requires_login",
+            message: "Please complete login",
+            data: { login_url }
+          }, { headers: corsHeaders })
+        }
+        break
+
+      case '/test_connection':
+        const { data: sessionData } = await supabaseClient
+          .from('trading_sessions')
+          .select('*')
+          .eq('id', 1)
+          .maybeSingle()
+
+        if (sessionData && sessionData.access_token && sessionData.status === 'authenticated') {
+          return Response.json({
+            status: "connected",
+            message: "Connected to Zerodha",
+            data: {
+              user_id: sessionData.user_id,
+              user_name: sessionData.user_name
+            }
+          }, { headers: corsHeaders })
+        } else {
+          return Response.json({
+            status: "disconnected",
+            message: "Not connected to broker"
+          }, { headers: corsHeaders })
+        }
+        break
+
       default:
         return Response.json({
           status: "error",
