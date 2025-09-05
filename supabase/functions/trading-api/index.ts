@@ -497,11 +497,28 @@ serve(async (req) => {
         break
 
       case '/get_balance':
-        // Mock balance data
+        // Complete balance data matching Zerodha structure
         const balance = {
           equity: {
-            available: { cash: 100000 },
-            utilised: { debits: 0 }
+            available: { 
+              cash: 100000,
+              opening_balance: 100000,
+              live_balance: 100000,
+              collateral: 0,
+              intraday_payin: 0
+            },
+            utilised: { 
+              debits: 0,
+              exposure: 0,
+              m2m_realised: 0,
+              m2m_unrealised: 0,
+              option_premium: 0,
+              payout: 0,
+              span: 0,
+              holding_sales: 0,
+              turnover: 0
+            },
+            net: 100000
           }
         }
 
