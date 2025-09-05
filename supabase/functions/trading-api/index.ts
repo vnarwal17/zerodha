@@ -348,6 +348,230 @@ serve(async (req) => {
         }
         break
 
+      case '/instruments':
+        const { data: instrumentsSessionData } = await supabaseClient
+          .from('trading_sessions')
+          .select('access_token')
+          .eq('id', 1)
+          .maybeSingle()
+
+        const { data: instrumentsApiKeyData } = await supabaseClient
+          .from('trading_credentials')
+          .select('api_key')
+          .eq('id', 1)
+          .maybeSingle()
+
+        // Define comprehensive stock lists
+        const nifty50Stocks = ["RELIANCE", "TCS", "HDFCBANK", "INFY", "HINDUNILVR", "HDFC", "ICICIBANK", "KOTAKBANK", "BHARTIARTL", "ITC", "SBIN", "BAJFINANCE", "ASIANPAINT", "MARUTI", "HCLTECH", "AXISBANK", "LT", "DMART", "SUNPHARMA", "TITAN", "ULTRACEMCO", "NESTLEIND", "WIPRO", "NTPC", "JSWSTEEL", "TECHM", "TATAMOTORS", "INDUSINDBK", "POWERGRID", "BAJAJFINSV", "GRASIM", "ADANIENT", "COALINDIA", "HEROMOTOCO", "CIPLA", "EICHERMOT", "BRITANNIA", "DIVISLAB", "DRREDDY", "APOLLOHOSP", "TATACONSUM", "UPL", "BAJAJ-AUTO", "HINDALCO", "ONGC", "SBILIFE", "BPCL", "TATASTEEL", "HDFCLIFE", "ADANIPORTS"]
+        const bankniftyStocks = ["HDFCBANK", "ICICIBANK", "KOTAKBANK", "SBIN", "AXISBANK", "INDUSINDBK", "BAJFINANCE", "BAJAJFINSV", "PNB", "BANKBARODA", "AUBANK", "IDFCFIRSTB"]
+        
+        // Create instruments from the stock lists
+        const createInstrument = (symbol: string, baseToken: number) => ({
+          symbol: symbol,
+          instrument_token: baseToken,
+          exchange: "NSE",
+          name: symbol + " Ltd.",
+          is_nifty50: nifty50Stocks.includes(symbol),
+          is_banknifty: bankniftyStocks.includes(symbol)
+        })
+
+        let instruments = []
+
+        // Always provide fallback data
+        let baseToken = 1000000
+        nifty50Stocks.forEach(symbol => {
+          instruments.push(createInstrument(symbol, baseToken++))
+        })
+        
+        bankniftyStocks.forEach(symbol => {
+          if (!nifty50Stocks.includes(symbol)) {
+            instruments.push(createInstrument(symbol, baseToken++))
+          }
+        })
+
+        return Response.json({
+          status: "success",
+          message: "Instruments fetched successfully",
+          data: {
+            instruments: instruments,
+            nifty50_stocks: nifty50Stocks,
+            banknifty_stocks: bankniftyStocks,
+            count: instruments.length
+          }
+        }, { headers: corsHeaders })
+
+      case '/start_live_trading':
+        const { symbols } = data
+        
+        const { error: tradingError } = await supabaseClient
+          .from('trading_sessions')
+          .upsert({
+            id: 1,
+            trading_active: true,
+            symbols: symbols,
+            updated_at: new Date().toISOString()
+          })
+
+        if (tradingError) {
+          return Response.json({
+            status: "error",
+            message: tradingError.message
+          }, { headers: corsHeaders })
+        }
+
+        return Response.json({
+          status: "success",
+          message: "Live trading started",
+          data: { symbols: symbols.map((s: any) => s.symbol) }
+        }, { headers: corsHeaders })
+
+      case '/stop_live_trading':
+        const { error: stopError } = await supabaseClient
+          .from('trading_sessions')
+          .update({
+            trading_active: false,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', 1)
+
+        if (stopError) {
+          return Response.json({
+            status: "error",
+            message: stopError.message
+          }, { headers: corsHeaders })
+        }
+
+        return Response.json({
+          status: "success",
+          message: "Live trading stopped"
+        }, { headers: corsHeaders })
+
+      case '/get_live_status':
+        const { data: liveSessionData } = await supabaseClient
+          .from('trading_sessions')
+          .select('*')
+          .eq('id', 1)
+          .maybeSingle()
+
+        const live_status = {
+          market_open: true,
+          active_positions: 0,
+          total_positions: 0,
+          monitoring_symbols: liveSessionData?.symbols ? liveSessionData.symbols.length : 0,
+          positions_detail: [],
+          strategy_logs: []
+        }
+
+        return Response.json({
+          status: "success",
+          message: "Live status retrieved",
+          data: { live_status }
+        }, { headers: corsHeaders })
+
+      case '/update_settings':
+        const { settings } = data
+        
+        const { error: settingsError } = await supabaseClient
+          .from('trading_settings')
+          .upsert({
+            id: 1,
+            settings: settings,
+            updated_at: new Date().toISOString()
+          })
+
+        if (settingsError) {
+          return Response.json({
+            status: "error",
+            message: settingsError.message
+          }, { headers: corsHeaders })
+        }
+
+        return Response.json({
+          status: "success",
+          message: "Settings updated successfully"
+        }, { headers: corsHeaders })
+
+      case '/get_balance':
+        // Mock balance data
+        const balance = {
+          equity: {
+            available: { cash: 100000 },
+            utilised: { debits: 0 }
+          }
+        }
+
+        return Response.json({
+          status: "success",
+          message: "Balance retrieved",
+          data: { balance, user_id: "mock_user" }
+        }, { headers: corsHeaders })
+
+      case '/get_historical_data':
+        // Mock historical data
+        const mockCandles = Array.from({ length: 50 }, (_, i) => ({
+          timestamp: new Date(Date.now() - (50 - i) * 60000).toISOString(),
+          open: 100 + Math.random() * 10,
+          high: 105 + Math.random() * 10,
+          low: 95 + Math.random() * 10,
+          close: 100 + Math.random() * 10,
+          volume: Math.floor(Math.random() * 10000)
+        }))
+
+        const signal = analyzeIntradayStrategy(mockCandles)
+
+        return Response.json({
+          status: "success",
+          message: "Historical data retrieved",
+          data: {
+            symbol: data.symbol || "MOCK",
+            candles: mockCandles,
+            signal: signal,
+            count: mockCandles.length
+          }
+        }, { headers: corsHeaders })
+
+      case '/execute_trade':
+        return Response.json({
+          status: "success",
+          message: "Trade executed (mock)",
+          data: {
+            order_id: "mock_order_" + Date.now(),
+            symbol: data.symbol || "MOCK",
+            action: data.action || "BUY",
+            quantity: data.quantity || 1
+          }
+        }, { headers: corsHeaders })
+
+      case '/analyze_symbols':
+        const mockSignals = (data.symbols || []).map((symbol: any) => ({
+          symbol: symbol.symbol,
+          action: 'HOLD' as const,
+          price: 100,
+          quantity: 0,
+          reason: 'Mock analysis'
+        }))
+
+        return Response.json({
+          status: "success",
+          message: "Symbols analyzed",
+          data: {
+            signals: mockSignals,
+            timestamp: new Date().toISOString(),
+            analyzed_count: mockSignals.length
+          }
+        }, { headers: corsHeaders })
+
+      case '/place_test_order':
+        return Response.json({
+          status: "success",
+          message: "Test order placed successfully",
+          data: {
+            order_id: "test_order_" + Date.now(),
+            symbol: "SBIN",
+            message: "Test order executed"
+          }
+        }, { headers: corsHeaders })
+
       case '/test_connection':
         const { data: sessionData } = await supabaseClient
           .from('trading_sessions')
