@@ -89,57 +89,86 @@ function isValidRejectionCandle(candle: CandleData, sma50: number, bias: 'LONG' 
 }
 
 // ============= ENCRYPTION UTILITIES =============
-async function getEncryptionKey(): Promise<CryptoKey> {
-  const keyData = Deno.env.get('ENCRYPTION_KEY')
-  if (!keyData) {
-    throw new Error('Encryption key not configured')
+async function getEncryptionKey(): Promise<CryptoKey | null> {
+  try {
+    const keyData = Deno.env.get('ENCRYPTION_KEY')
+    if (!keyData) {
+      console.warn('ENCRYPTION_KEY not configured, using fallback mode')
+      return null
+    }
+    
+    const keyBytes = new TextEncoder().encode(keyData.padEnd(32, '0').substring(0, 32))
+    return await crypto.subtle.importKey(
+      'raw',
+      keyBytes,
+      { name: 'AES-GCM' },
+      false,
+      ['encrypt', 'decrypt']
+    )
+  } catch (error) {
+    console.warn('Failed to create encryption key, using fallback mode:', error)
+    return null
   }
-  
-  const keyBytes = new TextEncoder().encode(keyData.padEnd(32, '0').substring(0, 32))
-  return await crypto.subtle.importKey(
-    'raw',
-    keyBytes,
-    { name: 'AES-GCM' },
-    false,
-    ['encrypt', 'decrypt']
-  )
 }
 
 async function encryptData(data: string): Promise<string> {
-  const key = await getEncryptionKey()
-  const iv = crypto.getRandomValues(new Uint8Array(12))
-  const encodedData = new TextEncoder().encode(data)
-  
-  const encrypted = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    key,
-    encodedData
-  )
-  
-  const combined = new Uint8Array(iv.length + encrypted.byteLength)
-  combined.set(iv)
-  combined.set(new Uint8Array(encrypted), iv.length)
-  
-  return btoa(String.fromCharCode(...combined))
+  try {
+    const key = await getEncryptionKey()
+    if (!key) {
+      console.warn('Encryption not available, storing data as-is')
+      return data // Fallback to plain text
+    }
+    
+    const iv = crypto.getRandomValues(new Uint8Array(12))
+    const encodedData = new TextEncoder().encode(data)
+    
+    const encrypted = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv },
+      key,
+      encodedData
+    )
+    
+    const combined = new Uint8Array(iv.length + encrypted.byteLength)
+    combined.set(iv)
+    combined.set(new Uint8Array(encrypted), iv.length)
+    
+    return btoa(String.fromCharCode(...combined))
+  } catch (error) {
+    console.warn('Encryption failed, storing data as-is:', error)
+    return data // Fallback to plain text
+  }
 }
 
 async function decryptData(encryptedData: string): Promise<string> {
   try {
     const key = await getEncryptionKey()
-    const combined = new Uint8Array(atob(encryptedData).split('').map(c => c.charCodeAt(0)))
-    const iv = combined.slice(0, 12)
-    const data = combined.slice(12)
+    if (!key) {
+      // No encryption key available, assume data is plain text
+      console.warn('Encryption not available, treating data as plain text')
+      return encryptedData
+    }
     
-    const decrypted = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
-      key,
-      data
-    )
-    
-    return new TextDecoder().decode(decrypted)
+    // Try to decrypt - if it fails, might be plain text from before encryption was enabled
+    try {
+      const combined = new Uint8Array(atob(encryptedData).split('').map(c => c.charCodeAt(0)))
+      const iv = combined.slice(0, 12)
+      const data = combined.slice(12)
+      
+      const decrypted = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv },
+        key,
+        data
+      )
+      
+      return new TextDecoder().decode(decrypted)
+    } catch (decryptError) {
+      // Data might be plain text from before encryption was enabled
+      console.warn('Failed to decrypt, assuming plain text:', decryptError)
+      return encryptedData
+    }
   } catch (error) {
-    console.error('Decryption failed:', error)
-    throw new Error('Failed to decrypt data')
+    console.warn('Decryption failed, returning original data:', error)
+    return encryptedData
   }
 }
 
