@@ -58,6 +58,9 @@ export type Database = {
           api_key: string
           api_secret: string
           created_at: string
+          encrypted_api_key: string | null
+          encrypted_api_secret: string | null
+          encryption_version: number | null
           id: number
           updated_at: string
         }
@@ -65,6 +68,9 @@ export type Database = {
           api_key: string
           api_secret: string
           created_at?: string
+          encrypted_api_key?: string | null
+          encrypted_api_secret?: string | null
+          encryption_version?: number | null
           id?: number
           updated_at?: string
         }
@@ -72,6 +78,9 @@ export type Database = {
           api_key?: string
           api_secret?: string
           created_at?: string
+          encrypted_api_key?: string | null
+          encrypted_api_secret?: string | null
+          encryption_version?: number | null
           id?: number
           updated_at?: string
         }
@@ -205,7 +214,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      migrate_credentials_to_encrypted: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
