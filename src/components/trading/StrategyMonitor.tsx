@@ -23,7 +23,10 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
 
-    if (isMonitoring && selectedSymbols.length > 0) {
+    if (isLiveTrading && selectedSymbols.length > 0) {
+      setIsMonitoring(true);
+      setAutoExecute(true); // Auto-enable execution when live trading starts
+      
       // Analyze symbols every 3 minutes (matching candle interval)
       interval = setInterval(async () => {
         await analyzeSymbols();
@@ -31,12 +34,15 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
 
       // Initial analysis
       analyzeSymbols();
+    } else {
+      setIsMonitoring(false);
+      setAutoExecute(false);
     }
 
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isMonitoring, selectedSymbols]);
+  }, [isLiveTrading, selectedSymbols]);
 
   const analyzeSymbols = async () => {
     try {
@@ -46,11 +52,12 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
         setSignals(response.data.signals);
         setLastUpdate(new Date().toLocaleTimeString());
 
-        // Auto-execute trades if enabled
-        if (autoExecute && isLiveTrading) {
+        // Auto-execute trades when live trading is active
+        if (isLiveTrading) {
           for (const signal of response.data.signals) {
             if (signal.action === 'BUY' || signal.action === 'SELL') {
               await executeSignal(signal);
+              toast.success(`🚀 Live order executed: ${signal.action} ${signal.symbol} @ ${signal.price}`);
             }
           }
         }
@@ -130,26 +137,11 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center gap-4">
-          <div className="flex gap-2">
-            {!isMonitoring ? (
-              <Button 
-                onClick={startMonitoring}
-                disabled={selectedSymbols.length === 0}
-                className="flex items-center gap-2"
-              >
-                <Play className="h-4 w-4" />
-                Start Monitoring
-              </Button>
-            ) : (
-              <Button 
-                onClick={stopMonitoring}
-                variant="destructive"
-                className="flex items-center gap-2"
-              >
-                <Square className="h-4 w-4" />
-                Stop Monitoring
-              </Button>
-            )}
+          <div className="text-sm text-muted-foreground">
+            {isLiveTrading ? 
+              `Monitoring ${selectedSymbols.length} symbols for trade signals` : 
+              'Live trading disabled - use Start Trading button in header'
+            }
           </div>
           
           <div className="flex items-center gap-2">
