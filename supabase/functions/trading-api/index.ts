@@ -903,6 +903,81 @@ serve(async (req) => {
         }
         break
 
+      case '/live_status':
+        try {
+          // Get latest trading logs
+          const { data: logsData } = await supabaseClient
+            .from('trading_logs')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(50)
+
+          // Get active trading session
+          const { data: sessionData } = await supabaseClient
+            .from('trading_sessions')
+            .select('*')
+            .eq('id', 1)
+            .maybeSingle()
+
+          // Get active positions
+          const { data: positionsData } = await supabaseClient
+            .from('trading_positions')
+            .select('*')
+            .eq('status', 'active')
+
+          // Get balance data if authenticated
+          let balanceData = null
+          if (sessionData?.access_token) {
+            try {
+              const { data: apiKeyData } = await supabaseClient
+                .from('trading_credentials')
+                .select('api_key')
+                .eq('id', 1)
+                .maybeSingle()
+
+              if (apiKeyData?.api_key) {
+                const balanceResponse = await fetch(`${KITE_API_BASE}/user/margins`, {
+                  method: 'GET',
+                  headers: {
+                    'Authorization': `token ${apiKeyData.api_key}:${sessionData.access_token}`,
+                    'X-Kite-Version': '3'
+                  }
+                })
+
+                if (balanceResponse.ok) {
+                  const balanceResult = await balanceResponse.json()
+                  balanceData = balanceResult.data
+                }
+              }
+            } catch (error) {
+              console.warn('Failed to fetch balance:', error)
+            }
+          }
+
+          const liveStatus = {
+            is_market_open: true,
+            live_trading_active: sessionData?.trading_active || false,
+            selected_symbols: sessionData?.symbols || [],
+            active_positions: positionsData || [],
+            strategy_logs: logsData || [],
+            balance: balanceData,
+            last_updated: new Date().toISOString()
+          }
+
+          return Response.json({
+            status: "success",
+            message: "Live status retrieved",
+            data: { live_status: liveStatus }
+          }, { headers: corsHeaders })
+        } catch (error) {
+          console.error('Live status error:', error)
+          return Response.json({
+            status: "error",
+            message: "Failed to get live status: " + error.message
+          }, { headers: corsHeaders })
+        }
+        break
+
       default:
         return Response.json({
           status: "error",
