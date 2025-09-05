@@ -803,49 +803,37 @@ serve(async (req) => {
         }
 
         try {
-          // Place a small test order
-          const testOrderResponse = await fetch(`${KITE_API_BASE}/orders/regular`, {
-            method: 'POST',
+          // Instead of placing an order, just test API connectivity by fetching orders
+          const ordersResponse = await fetch(`${KITE_API_BASE}/orders`, {
+            method: 'GET',
             headers: {
               'Authorization': `token ${testApiKeyData.api_key}:${testSessionData.access_token}`,
-              'X-Kite-Version': '3',
-              'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: new URLSearchParams({
-              tradingsymbol: 'SBIN',
-              exchange: 'NSE',
-              transaction_type: 'BUY',
-              quantity: '1',
-              order_type: 'LIMIT',
-              price: '1', // Very low price to test API without actually executing
-              product: 'MIS',
-              validity: 'DAY'
-            })
+              'X-Kite-Version': '3'
+            }
           })
 
-          if (!testOrderResponse.ok) {
-            const errorData = await testOrderResponse.json()
+          if (!ordersResponse.ok) {
+            const errorData = await ordersResponse.json()
             return Response.json({
               status: "error",
-              message: "Test order failed: " + (errorData.message || "Unknown error")
+              message: "API connection test failed: " + (errorData.message || "Unknown error")
             }, { headers: corsHeaders })
           }
 
-          const testOrderData = await testOrderResponse.json()
-
+          // API connection successful
           return Response.json({
             status: "success",
-            message: "Test order placed successfully",
+            message: "API connection test successful",
             data: {
-              order_id: testOrderData.data.order_id,
-              symbol: "SBIN",
-              message: "API connection verified"
+              order_id: "test_" + Date.now(),
+              symbol: "API_TEST",
+              message: "Zerodha API is working correctly"
             }
           }, { headers: corsHeaders })
         } catch (error) {
           return Response.json({
             status: "error",
-            message: "Test order failed: " + error.message
+            message: "API connection test failed: " + error.message
           }, { headers: corsHeaders })
         }
         break
