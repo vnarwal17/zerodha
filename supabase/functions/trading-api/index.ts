@@ -1062,15 +1062,35 @@ serve(async (req) => {
             }, { headers: corsHeaders })
           }
 
-          // Order data in exact format as shown in your image
+          // Get current market price first
+          let currentPrice = 800; // Default fallback price
+          try {
+            const ltpResponse = await fetch(`${KITE_API_BASE}/quote/ltp?i=NSE:${test_symbol}`, {
+              headers: {
+                'Authorization': `token ${testApiKeyData.api_key}:${testSessionData.access_token}`,
+                'X-Kite-Version': '3'
+              }
+            });
+            
+            if (ltpResponse.ok) {
+              const ltpData = await ltpResponse.json();
+              if (ltpData.status === 'success' && ltpData.data && ltpData.data[`NSE:${test_symbol}`]) {
+                currentPrice = ltpData.data[`NSE:${test_symbol}`].last_price;
+                console.log(`Current market price for ${test_symbol}:`, currentPrice);
+              }
+            }
+          } catch (priceError) {
+            console.error('Error fetching market price:', priceError);
+          }
+
+          // Use market order instead of limit order to avoid circuit limit issues
           const testOrderParams = new URLSearchParams({
             variety: 'regular',
             exchange: 'NSE',
             tradingsymbol: test_symbol,
             transaction_type: 'BUY',
-            order_type: 'LIMIT',
+            order_type: 'MARKET', // Changed to MARKET order
             quantity: '1',
-            price: '221', // Example price as shown in image
             product: 'CNC',
             validity: 'DAY',
             disclosed_quantity: '0',
