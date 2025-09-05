@@ -18,11 +18,7 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [signals, setSignals] = useState<StrategySignal[]>([]);
   const [lastUpdate, setLastUpdate] = useState<string>('');
-  const [autoExecute, setAutoExecute] = useState(true);
-
-  useEffect(() => {
-    handleMonitoringEffect();
-  }, [isLiveTrading, selectedSymbols]);
+  const [autoExecute, setAutoExecute] = useState(false);
 
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
@@ -85,15 +81,18 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
     }
   };
 
-  const handleMonitoringEffect = () => {
-    // Strategy Monitor now automatically follows live trading status
-    if (isLiveTrading && selectedSymbols.length > 0) {
-      setIsMonitoring(true);
-      setAutoExecute(true);
-    } else {
-      setIsMonitoring(false);
-      setAutoExecute(false);
+  const startMonitoring = () => {
+    if (!isLiveTrading) {
+      toast.error('Please start live trading first');
+      return;
     }
+    setIsMonitoring(true);
+    toast.success('Strategy monitoring started');
+  };
+
+  const stopMonitoring = () => {
+    setIsMonitoring(false);
+    toast.info('Strategy monitoring stopped');
   };
 
   const getSignalIcon = (action: string) => {
@@ -130,21 +129,41 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="text-center space-y-2">
-          <div className="text-sm text-muted-foreground">
-            Strategy monitoring follows live trading status
+        <div className="flex items-center gap-4">
+          <div className="flex gap-2">
+            {!isMonitoring ? (
+              <Button 
+                onClick={startMonitoring}
+                disabled={selectedSymbols.length === 0}
+                className="flex items-center gap-2"
+              >
+                <Play className="h-4 w-4" />
+                Start Monitoring
+              </Button>
+            ) : (
+              <Button 
+                onClick={stopMonitoring}
+                variant="destructive"
+                className="flex items-center gap-2"
+              >
+                <Square className="h-4 w-4" />
+                Stop Monitoring
+              </Button>
+            )}
           </div>
-          {isLiveTrading ? (
-            <div className="flex items-center justify-center gap-2 text-green-600">
-              <Play className="h-4 w-4" />
-              <span className="font-medium">Active</span>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center gap-2 text-muted-foreground">
-              <Square className="h-4 w-4" />
-              <span>Inactive - Use header button to start trading</span>
-            </div>
-          )}
+          
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="autoExecute"
+              checked={autoExecute}
+              onChange={(e) => setAutoExecute(e.target.checked)}
+              className="rounded"
+            />
+            <label htmlFor="autoExecute" className="text-sm">
+              Auto-execute trades
+            </label>
+          </div>
         </div>
 
         {lastUpdate && (
@@ -158,7 +177,7 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
           
           {signals.length === 0 ? (
             <div className="text-center py-4 text-muted-foreground">
-              {isLiveTrading ? 'Analyzing symbols...' : 'Start trading from header to see signals'}
+              {isMonitoring ? 'Analyzing symbols...' : 'Start monitoring to see signals'}
             </div>
           ) : (
             <div className="grid gap-2">
@@ -185,7 +204,7 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
                       <Button
                         size="sm"
                         onClick={() => executeSignal(signal)}
-                        disabled={!isLiveTrading}
+                        disabled={!isLiveTrading || autoExecute}
                       >
                         Execute
                       </Button>

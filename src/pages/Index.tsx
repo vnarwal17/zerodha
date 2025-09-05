@@ -299,9 +299,9 @@ const Index = () => {
                 symbol: log.symbol,
                 event: log.event,
                 message: log.message,
-                type: (log.event && log.event.includes('ERROR')) ? 'error' as const :
-                      (log.event && log.event.includes('TRADE_EXECUTED')) ? 'success' as const :
-                      (log.event && log.event.includes('WARNING')) ? 'warning' as const : 'info' as const
+                type: log.event.includes('ERROR') ? 'error' as const :
+                      log.event.includes('TRADE_EXECUTED') ? 'success' as const :
+                      log.event.includes('WARNING') ? 'warning' as const : 'info' as const
               }))}
               onRefresh={handleRefreshLogs}
               onExport={handleExportLogs}
