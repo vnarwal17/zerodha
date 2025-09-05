@@ -127,25 +127,39 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
   }
 
   const closes = candles.map(c => c.close);
-  const currentTime = new Date();
-  const currentHour = currentTime.getHours();
-  const currentMinute = currentTime.getMinutes();
   
-  // Only trade between 10 AM and 1 PM (entry window)
-  if (currentHour < 10 || (currentHour >= 13)) {
+  // Convert current time to IST for proper market timing
+  const currentTime = new Date();
+  const istTime = new Date(currentTime.getTime() + (5.5 * 60 * 60 * 1000)); // Add 5.5 hours for IST
+  const currentHour = istTime.getHours();
+  const currentMinute = istTime.getMinutes();
+  
+  // Only trade between 9:15 AM and 3:00 PM IST (market hours)
+  // Entry window: 9:15 AM to 1:00 PM IST
+  if (currentHour < 9 || (currentHour === 9 && currentMinute < 15) || currentHour >= 15) {
     return {
       symbol: '',
       action: 'HOLD',
       price: 0,
       quantity: 0,
-      reason: 'Outside trading hours (10 AM - 1 PM entry window)'
+      reason: 'Outside market hours (9:15 AM - 3:00 PM IST)'
+    };
+  }
+  
+  // Entry window restriction: 9:15 AM to 1:00 PM IST
+  if (currentHour >= 13) {
+    return {
+      symbol: '',
+      action: 'HOLD',
+      price: 0,
+      quantity: 0,
+      reason: 'Outside entry window (9:15 AM - 1:00 PM IST)'
     };
   }
 
-  // Find the 10 AM setup candle (09:57-09:59)
-  // For this implementation, we'll use the candle that should represent this timeframe
-  const setupCandleIndex = candles.length - 1; // Most recent for demo
-  const setupCandle = candles[setupCandleIndex];
+  // Setup candle validation: Look for proper setup at market open (9:15 AM IST)
+  // The setup should be validated using historical candles from 9:15-9:18 (first 3-minute candle)
+  const setupCandle = candles[Math.max(0, candles.length - 10)]; // Look at earlier candles for setup
   const sma50 = calculateSMA50(closes);
   
   if (sma50 === 0) {
@@ -158,7 +172,7 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
     };
   }
 
-  // Check 10 AM setup validity
+  // Check market open setup validity
   const setupResult = isValidSetupCandle(setupCandle, sma50);
   
   if (!setupResult.isValid) {
@@ -167,7 +181,7 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
       action: 'HOLD',
       price: 0,
       quantity: 0,
-      reason: 'Invalid 10 AM setup - candle touches SMA or straddles it'
+      reason: 'Invalid market open setup - candle touches SMA or straddles it'
     };
   }
 
@@ -176,7 +190,7 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
   let rejectionIndex = -1;
   
   // Search for rejection candle in subsequent candles
-  for (let i = setupCandleIndex + 1; i < candles.length; i++) {
+  for (let i = Math.max(0, candles.length - 10) + 1; i < candles.length; i++) {
     const candidate = candles[i];
     
     // Check if any candle fully crosses SMA (invalidates day)

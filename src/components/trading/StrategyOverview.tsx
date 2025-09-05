@@ -19,14 +19,14 @@ interface StrategyConfig {
 const defaultConfig: StrategyConfig = {
   candleInterval: 3,
   smaPeriod: 50,
-  setupTime: "10:00 AM",
+  setupTime: "9:15 AM IST",
   entryOffset: 0.10,
   slOffset: 0.15,
   riskRewardRatio: 5,
   minWickPercent: 15,
   skipCandles: 2,
-  entryWindow: "1:00 PM",
-  forceExit: "3:00 PM",
+  entryWindow: "1:00 PM IST",
+  forceExit: "3:00 PM IST",
   positionSize: 100000,
 };
 
@@ -39,8 +39,8 @@ export function StrategyOverview({ config = defaultConfig }: { config?: Strategy
         </CardHeader>
         <CardContent>
           <p className="text-muted-foreground">
-            3-minute candle SMA rejection strategy. Setup at 10 AM (09:57-09:59 candle), 
-            wick rejection confirmation, 2-candle skip period, and 5:1 risk-reward with daily exit at 3 PM.
+            3-minute candle SMA rejection strategy. Setup at market open (9:15-9:18 AM IST), 
+            wick rejection confirmation, 2-candle skip period, and 5:1 risk-reward with daily exit at 3:00 PM IST.
           </p>
         </CardContent>
       </Card>
@@ -57,7 +57,7 @@ export function StrategyOverview({ config = defaultConfig }: { config?: Strategy
           title="Setup Time"
           value={config.setupTime}
           icon={Clock}
-          description="09:57-09:59 candle"
+          description="9:15-9:18 AM IST"
         />
         
         <MetricCard
