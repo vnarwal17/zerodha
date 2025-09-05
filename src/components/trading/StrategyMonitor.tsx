@@ -18,14 +18,14 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [signals, setSignals] = useState<StrategySignal[]>([]);
   const [lastUpdate, setLastUpdate] = useState<string>('');
-  const [autoExecute, setAutoExecute] = useState(false);
+  // Auto-execute is always enabled - no state needed
 
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
 
     if (isLiveTrading && selectedSymbols.length > 0) {
       setIsMonitoring(true);
-      setAutoExecute(true); // Auto-enable execution when live trading starts
+      // Auto-execute is always enabled when live trading starts
       
       // Analyze symbols every 3 minutes (matching candle interval)
       interval = setInterval(async () => {
@@ -36,7 +36,6 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
       analyzeSymbols();
     } else {
       setIsMonitoring(false);
-      setAutoExecute(false);
     }
 
     return () => {
@@ -144,17 +143,17 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
             }
           </div>
           
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="autoExecute"
-              checked={autoExecute}
-              onChange={(e) => setAutoExecute(e.target.checked)}
-              className="rounded"
-            />
-            <label htmlFor="autoExecute" className="text-sm">
-              Auto-execute trades
-            </label>
+          <div className="flex items-center space-x-4 text-sm text-muted-foreground">
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+              <span>Auto-execute trades: ENABLED</span>
+            </div>
+            {isLiveTrading && (
+              <div className="flex items-center space-x-1">
+                <span className="text-green-600">🚀</span>
+                <span>Orders will be placed automatically when signals are detected</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -196,9 +195,10 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
                       <Button
                         size="sm"
                         onClick={() => executeSignal(signal)}
-                        disabled={!isLiveTrading || autoExecute}
+                        disabled={!isLiveTrading}
+                        variant="outline"
                       >
-                        Execute
+                        Manual Execute
                       </Button>
                     )}
                   </div>
