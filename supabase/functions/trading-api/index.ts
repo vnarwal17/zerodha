@@ -135,7 +135,7 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
   const currentMinute = istTime.getMinutes();
   
   // Only trade between 9:15 AM and 3:00 PM IST (market hours)
-  // Entry window: 9:15 AM to 1:00 PM IST
+  // Entry window: 10:00 AM to 1:00 PM IST (after setup validation)
   if (currentHour < 9 || (currentHour === 9 && currentMinute < 15) || currentHour >= 15) {
     return {
       symbol: '',
@@ -146,19 +146,19 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
     };
   }
   
-  // Entry window restriction: 9:15 AM to 1:00 PM IST
-  if (currentHour >= 13) {
+  // Entry window restriction: 10:00 AM to 1:00 PM IST (after setup time)
+  if (currentHour < 10 || currentHour >= 13) {
     return {
       symbol: '',
       action: 'HOLD',
       price: 0,
       quantity: 0,
-      reason: 'Outside entry window (9:15 AM - 1:00 PM IST)'
+      reason: 'Outside entry window (10:00 AM - 1:00 PM IST)'
     };
   }
 
-  // Setup candle validation: Look for proper setup at market open (9:15 AM IST)
-  // The setup should be validated using historical candles from 9:15-9:18 (first 3-minute candle)
+  // Setup candle validation: 09:57:00 to 09:59:59 hrs
+  // This represents the 3-minute candle from 9:57-10:00 AM IST
   const setupCandle = candles[Math.max(0, candles.length - 10)]; // Look at earlier candles for setup
   const sma50 = calculateSMA50(closes);
   
@@ -172,7 +172,7 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
     };
   }
 
-  // Check market open setup validity
+  // Check 09:57-09:59 setup validity
   const setupResult = isValidSetupCandle(setupCandle, sma50);
   
   if (!setupResult.isValid) {
@@ -181,7 +181,7 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
       action: 'HOLD',
       price: 0,
       quantity: 0,
-      reason: 'Invalid market open setup - candle touches SMA or straddles it'
+      reason: 'Invalid 09:57-09:59 setup - candle touches SMA or straddles it'
     };
   }
 

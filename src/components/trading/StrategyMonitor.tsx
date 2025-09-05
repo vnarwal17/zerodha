@@ -152,7 +152,7 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
           Strategy Monitor
         </CardTitle>
         <CardDescription>
-          Your comprehensive intraday strategy with 50-period SMA, market open setup validation (9:15 AM IST), and 5:1 RR
+          Your comprehensive intraday strategy with 50-period SMA, 09:57-09:59 setup validation, and 5:1 RR
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
