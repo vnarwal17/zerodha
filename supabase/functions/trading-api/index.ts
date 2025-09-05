@@ -38,100 +38,80 @@ interface ApiResponse<T = any> {
   data?: T;
 }
 
-// Your specific strategy implementation
+// ============= COMPREHENSIVE INTRADAY STRATEGY IMPLEMENTATION =============
+
 function calculateSMA50(prices: number[]): number {
   if (prices.length < 50) return 0;
   const sum = prices.slice(-50).reduce((a, b) => a + b, 0);
   return sum / 50;
 }
 
+function isTimeInRange(timestamp: string, startTime: string, endTime: string): boolean {
+  const time = new Date(timestamp).toTimeString().slice(0, 8);
+  return time >= startTime && time <= endTime;
+}
+
+function getCandleTime(timestamp: string): string {
+  return new Date(timestamp).toTimeString().slice(0, 8);
+}
+
 function isValidSetupCandle(candle: CandleData, sma50: number): { isValid: boolean; bias: 'LONG' | 'SHORT' | 'INVALID' } {
   const { open, high, low, close } = candle;
   
-  if (close > sma50) {
-    // Long bias setup - bearish hammer/doji with lower wick touching SMA
-    const bodySize = Math.abs(close - open);
-    const totalRange = high - low;
-    const lowerWick = Math.min(open, close) - low;
-    const upperWick = high - Math.max(open, close);
-    
-    if (bodySize / totalRange <= 0.3 && lowerWick >= bodySize * 2 && low <= sma50 && close > sma50) {
-      return { isValid: true, bias: 'LONG' };
-    }
-  } else if (close < sma50) {
-    // Short bias setup - bearish shooting star/doji with upper wick touching SMA
-    const bodySize = Math.abs(close - open);
-    const totalRange = high - low;
-    const lowerWick = Math.min(open, close) - low;
-    const upperWick = high - Math.max(open, close);
-    
-    if (bodySize / totalRange <= 0.3 && upperWick >= bodySize * 2 && high >= sma50 && close < sma50) {
-      return { isValid: true, bias: 'SHORT' };
-    }
+  // Check if entire candle is strictly above SMA (Long setup)
+  if (low > sma50 && high > sma50 && open > sma50 && close > sma50) {
+    return { isValid: true, bias: 'LONG' };
   }
   
+  // Check if entire candle is strictly below SMA (Short setup)
+  if (low < sma50 && high < sma50 && open < sma50 && close < sma50) {
+    return { isValid: true, bias: 'SHORT' };
+  }
+  
+  // Invalid if any part touches or crosses SMA
   return { isValid: false, bias: 'INVALID' };
 }
 
 function isValidRejectionCandle(candle: CandleData, bias: 'LONG' | 'SHORT', sma50: number): boolean {
   const { open, high, low, close } = candle;
+  const candleRange = high - low;
   
   if (bias === 'LONG') {
-    // For long bias, we want a bullish candle that closes above SMA
-    const bodySize = Math.abs(close - open);
-    const totalRange = high - low;
-    const wickTouchesSMA = low <= sma50;
-    const wickPercentage = ((Math.min(open, close) - low) / totalRange) * 100;
+    // Lower wick must touch SMA, body and close must be above SMA
+    const lowerWick = Math.min(open, close) - low;
+    const wickTouchesSMA = low <= sma50 && Math.min(open, close) > sma50;
+    const wickSizeValid = lowerWick >= (candleRange * 0.15);
     
-    if (close > open && close > sma50 && wickTouchesSMA && wickPercentage >= 15) {
-      return true;
-    }
-  } else if (bias === 'SHORT') {
-    // For short bias, we want a bearish candle that closes below SMA
-    const bodySize = Math.abs(close - open);
-    const totalRange = high - low;
-    const wickTouchesSMA = high >= sma50;
-    const wickPercentage = ((high - Math.max(open, close)) / totalRange) * 100;
+    return wickTouchesSMA && wickSizeValid && close > sma50 && open > sma50;
+  } else {
+    // Upper wick must touch SMA, body and close must be below SMA
+    const upperWick = high - Math.max(open, close);
+    const wickTouchesSMA = high >= sma50 && Math.max(open, close) < sma50;
+    const wickSizeValid = upperWick >= (candleRange * 0.15);
     
-    if (close < open && close < sma50 && wickTouchesSMA && wickPercentage >= 15) {
-      return true;
-    }
+    return wickTouchesSMA && wickSizeValid && close < sma50 && open < sma50;
   }
-  
-  return false;
 }
 
-function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
+function candleCrossesSMA(candle: CandleData, sma50: number): boolean {
+  const { open, high, low, close } = candle;
+  // Check if candle fully crosses SMA (both sides)
+  return (low < sma50 && high > sma50);
+}
+
+function analyzeComprehensiveStrategy(candles: CandleData[]): StrategySignal {
   if (candles.length < 50) {
     return {
       symbol: '',
       action: 'HOLD',
       price: 0,
       quantity: 0,
-      reason: 'Insufficient candles for 50-period SMA calculation'
+      reason: 'Insufficient data for SMA50 calculation (need at least 50 candles)'
     };
   }
 
+  // Get closing prices for SMA calculation
   const closes = candles.map(c => c.close);
-  const currentTime = new Date();
-  const currentHour = currentTime.getHours();
-  const currentMinute = currentTime.getMinutes();
-  
-  // Only trade between 10 AM and 1 PM (entry window)
-  if (currentHour < 10 || (currentHour >= 13)) {
-    return {
-      symbol: '',
-      action: 'HOLD',
-      price: 0,
-      quantity: 0,
-      reason: 'Outside trading hours (10 AM - 1 PM entry window)'
-    };
-  }
-
-  // Find the 10 AM setup candle (09:57-09:59)
-  // For this implementation, we'll use the candle that should represent this timeframe
-  const setupCandleIndex = candles.length - 1; // Most recent for demo
-  const setupCandle = candles[setupCandleIndex];
   const sma50 = calculateSMA50(closes);
   
   if (sma50 === 0) {
@@ -144,7 +124,30 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
     };
   }
 
-  // Check for valid setup candle
+  // Find the 10 AM setup candle (09:57:00 – 09:59:59)
+  let setupCandleIndex = -1;
+  let setupCandle: CandleData | null = null;
+  
+  for (let i = 0; i < candles.length; i++) {
+    const candleTime = getCandleTime(candles[i].timestamp);
+    if (candleTime >= "09:57:00" && candleTime <= "09:59:59") {
+      setupCandleIndex = i;
+      setupCandle = candles[i];
+      break;
+    }
+  }
+
+  if (!setupCandle || setupCandleIndex === -1) {
+    return {
+      symbol: '',
+      action: 'HOLD',
+      price: 0,
+      quantity: 0,
+      reason: 'No 10 AM setup candle found (09:57:00 – 09:59:59)'
+    };
+  }
+
+  // Validate 10 AM setup
   const setupResult = isValidSetupCandle(setupCandle, sma50);
   
   if (!setupResult.isValid) {
@@ -153,8 +156,130 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
       action: 'HOLD',
       price: 0,
       quantity: 0,
-      reason: 'No valid setup candle found'
+      reason: `Invalid 10 AM setup: candle touches/crosses SMA. SMA: ${sma50.toFixed(2)}, Candle: H:${setupCandle.high} L:${setupCandle.low} O:${setupCandle.open} C:${setupCandle.close}`
     };
+  }
+
+  // Look for rejection candle after setup
+  let rejectionCandleIndex = -1;
+  let rejectionCandle: CandleData | null = null;
+
+  for (let i = setupCandleIndex + 1; i < candles.length; i++) {
+    const candle = candles[i];
+    
+    // Check if any candle fully crosses SMA (invalidates day)
+    if (candleCrossesSMA(candle, sma50)) {
+      return {
+        symbol: '',
+        action: 'HOLD',
+        price: 0,
+        quantity: 0,
+        reason: `Day invalidated: candle at ${getCandleTime(candle.timestamp)} crossed SMA fully`
+      };
+    }
+
+    // Check for valid rejection candle
+    if (isValidRejectionCandle(candle, setupResult.bias, sma50)) {
+      rejectionCandleIndex = i;
+      rejectionCandle = candle;
+      break;
+    }
+  }
+
+  if (!rejectionCandle || rejectionCandleIndex === -1) {
+    return {
+      symbol: '',
+      action: 'HOLD',
+      price: 0,
+      quantity: 0,
+      reason: `Valid ${setupResult.bias} setup found but no rejection candle yet. Waiting for wick to touch SMA.`
+    };
+  }
+
+  // Skip 2 candles after rejection
+  const skipEndIndex = rejectionCandleIndex + 2;
+  if (skipEndIndex >= candles.length) {
+    return {
+      symbol: '',
+      action: 'HOLD',
+      price: 0,
+      quantity: 0,
+      reason: `Rejection candle found, waiting for skip period (2 candles) to complete`
+    };
+  }
+
+  // Check if we're still in entry window (until 13:00:00)
+  const currentTime = getCandleTime(candles[candles.length - 1].timestamp);
+  if (currentTime > "13:00:00") {
+    return {
+      symbol: '',
+      action: 'HOLD',
+      price: 0,
+      quantity: 0,
+      reason: 'Entry window closed (after 1 PM)'
+    };
+  }
+
+  // Check if SL would have been hit during skip period
+  for (let i = rejectionCandleIndex + 1; i <= skipEndIndex && i < candles.length; i++) {
+    const skipCandle = candles[i];
+    if (setupResult.bias === 'LONG') {
+      const stopLoss = rejectionCandle.low - 0.15;
+      if (skipCandle.low <= stopLoss) {
+        return {
+          symbol: '',
+          action: 'HOLD',
+          price: 0,
+          quantity: 0,
+          reason: `Trade cancelled: SL would have been hit during skip period at ${getCandleTime(skipCandle.timestamp)}`
+        };
+      }
+    } else {
+      const stopLoss = rejectionCandle.high + 0.15;
+      if (skipCandle.high >= stopLoss) {
+        return {
+          symbol: '',
+          action: 'HOLD',
+          price: 0,
+          quantity: 0,
+          reason: `Trade cancelled: SL would have been hit during skip period at ${getCandleTime(skipCandle.timestamp)}`
+        };
+      }
+    }
+  }
+
+  // Calculate entry, stop loss, and target based on strategy rules
+  let entryPrice: number;
+  let stopLoss: number;
+  let target: number;
+  let action: 'BUY' | 'SELL';
+
+  if (setupResult.bias === 'LONG') {
+    action = 'BUY';
+    entryPrice = rejectionCandle.high + 0.10;
+    stopLoss = rejectionCandle.low - 0.15;
+    const risk = entryPrice - stopLoss;
+    target = entryPrice + (risk * 5); // 5:1 RR
+  } else {
+    action = 'SELL';
+    entryPrice = rejectionCandle.low - 0.10;
+    stopLoss = rejectionCandle.high + 0.15;
+    const risk = stopLoss - entryPrice;
+    target = entryPrice - (risk * 5); // 5:1 RR
+  }
+
+  // Calculate position size (₹100,000 fixed capital)
+  const fixedCapital = 100000;
+  const riskPerShare = Math.abs(entryPrice - stopLoss);
+  const quantity = Math.floor(fixedCapital / entryPrice);
+
+  return {
+    symbol: '',
+    action: action,
+    price: entryPrice,
+    quantity: quantity,
+    reason: `${setupResult.bias} setup confirmed with rejection candle. Entry: ₹${entryPrice.toFixed(2)}, SL: ₹${stopLoss.toFixed(2)}, Target: ₹${target.toFixed(2)} (5:1 RR). Risk per share: ₹${riskPerShare.toFixed(2)}`
+  };
 }
 
 // ============= LOGGING UTILITIES =============
@@ -171,37 +296,6 @@ async function logActivity(supabaseClient: any, level: string, message: string, 
   } catch (error) {
     console.error('Failed to log activity:', error)
   }
-}
-
-  // Look for rejection candle in subsequent candles
-  for (let i = setupCandleIndex + 1; i < candles.length; i++) {
-    const rejectionCandle = candles[i];
-    
-    if (isValidRejectionCandle(rejectionCandle, setupResult.bias, sma50)) {
-      const action = setupResult.bias === 'LONG' ? 'BUY' : 'SELL';
-      const entryPrice = setupResult.bias === 'LONG' ? rejectionCandle.high : rejectionCandle.low;
-      const stopLoss = setupResult.bias === 'LONG' ? rejectionCandle.low : rejectionCandle.high;
-      const target = setupResult.bias === 'LONG' 
-        ? entryPrice + (entryPrice - stopLoss) * 2 
-        : entryPrice - (stopLoss - entryPrice) * 2;
-
-      return {
-        symbol: '',
-        action: action,
-        price: entryPrice,
-        quantity: 1, // This would be calculated based on risk management
-        reason: `Valid ${setupResult.bias} setup with rejection candle. Entry: ${entryPrice}, Stop: ${stopLoss}, Target: ${target}`
-      };
-    }
-  }
-
-  return {
-    symbol: '',
-    action: 'HOLD',
-    price: 0,
-    quantity: 0,
-    reason: 'Setup found but no valid rejection candle yet'
-  };
 }
 
 serve(async (req) => {
@@ -301,56 +395,56 @@ serve(async (req) => {
               })
             })
 
-            const tokenData = await tokenResponse.json()
-
-            if (tokenResponse.ok && tokenData.status === 'success') {
-              // Store access token and user data
-              const { error: sessionError } = await supabaseClient
-                .from('trading_sessions')
-                .upsert({
-                  id: 1,
-                  access_token: tokenData.data.access_token,
-                  request_token: request_token,
-                  user_id: tokenData.data.user_id,
-                  user_name: tokenData.data.user_name,
-                  status: 'authenticated',
-                  login_time: tokenData.data.login_time,
-                  updated_at: new Date().toISOString()
-                })
-
-              if (sessionError) {
-                await logActivity(supabaseClient, 'error', `Failed to save session: ${sessionError.message}`)
-                return Response.json({
-                  status: "error",
-                  message: sessionError.message
-                }, { headers: corsHeaders })
-              }
-
-              await logActivity(supabaseClient, 'success', `Successfully logged in to Zerodha as ${tokenData.data.user_name}`)
-              return Response.json({
-                status: "success",
-                message: "Login successful",
-                data: { 
-                  user_id: tokenData.data.user_id,
-                  user_name: tokenData.data.user_name
-                }
-              }, { headers: corsHeaders })
-            } else {
-              await logActivity(supabaseClient, 'error', `Zerodha authentication failed: ${tokenData.message || "Unknown error"}`)
+            if (!tokenResponse.ok) {
+              const errorData = await tokenResponse.json()
+              await logActivity(supabaseClient, 'error', `Zerodha authentication failed: ${errorData.message}`)
               return Response.json({
                 status: "error",
-                message: tokenData.message || "Authentication failed"
+                message: errorData.message || "Authentication failed"
               }, { headers: corsHeaders })
             }
+
+            const tokenData = await tokenResponse.json()
+            
+            // Save session data
+            const { error: sessionError } = await supabaseClient
+              .from('trading_sessions')
+              .upsert({
+                id: 1,
+                access_token: tokenData.data.access_token,
+                user_id: tokenData.data.user_id,
+                user_name: tokenData.data.user_name || tokenData.data.user_id,
+                status: 'authenticated',
+                expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
+                updated_at: new Date().toISOString()
+              })
+
+            if (sessionError) {
+              await logActivity(supabaseClient, 'error', `Failed to save session: ${sessionError.message}`)
+              return Response.json({
+                status: "error",
+                message: "Failed to save session"
+              }, { headers: corsHeaders })
+            }
+
+            await logActivity(supabaseClient, 'success', `Successfully authenticated with Zerodha. User: ${tokenData.data.user_id}`)
+            return Response.json({
+              status: "success",
+              message: "Login successful",
+              data: {
+                user_id: tokenData.data.user_id,
+                user_name: tokenData.data.user_name || tokenData.data.user_id
+              }
+            }, { headers: corsHeaders })
           } catch (error) {
-            await logActivity(supabaseClient, 'error', `Authentication API call failed: ${error.message}`)
+            await logActivity(supabaseClient, 'error', `Authentication error: ${error.message}`)
             return Response.json({
               status: "error",
-              message: "Failed to authenticate with Zerodha API"
+              message: "Authentication failed: " + error.message
             }, { headers: corsHeaders })
           }
         } else {
-          // Get API key for login URL
+          // Return login URL
           const { data: credentialsData } = await supabaseClient
             .from('trading_credentials')
             .select('api_key')
@@ -364,52 +458,56 @@ serve(async (req) => {
             }, { headers: corsHeaders })
           }
 
-          const login_url = `https://kite.zerodha.com/connect/login?v=3&api_key=${credentialsData.api_key}`
+          await logActivity(supabaseClient, 'info', 'Generated Zerodha login URL for user authentication')
+          const loginUrl = `https://kite.trade/connect/login?api_key=${credentialsData.api_key}`
+          
           return Response.json({
-            status: "requires_login",
-            message: "Please complete login",
-            data: { login_url }
+            status: "pending",
+            message: "Please complete login via Zerodha",
+            data: {
+              login_url: loginUrl
+            }
           }, { headers: corsHeaders })
         }
         break
 
       case '/instruments':
-        const { data: instrumentsSessionData } = await supabaseClient
-          .from('trading_sessions')
-          .select('access_token')
-          .eq('id', 1)
-          .maybeSingle()
-
-        const { data: instrumentsApiKeyData } = await supabaseClient
-          .from('trading_credentials')
-          .select('api_key')
-          .eq('id', 1)
-          .maybeSingle()
-
-        if (!instrumentsSessionData?.access_token || !instrumentsApiKeyData?.api_key) {
-          await logActivity(supabaseClient, 'error', 'Failed to fetch instruments: Not authenticated')
-          return Response.json({
-            status: "error",
-            message: "Not authenticated. Please login to Zerodha first."
-          }, { headers: corsHeaders })
-        }
-
-        await logActivity(supabaseClient, 'info', 'Fetching instruments from Zerodha API')
-
         try {
-          // Fetch real instruments from Zerodha API
+          const { data: sessionData } = await supabaseClient
+            .from('trading_sessions')
+            .select('access_token')
+            .eq('id', 1)
+            .maybeSingle()
+
+          const { data: apiKeyData } = await supabaseClient
+            .from('trading_credentials')
+            .select('api_key')
+            .eq('id', 1)
+            .maybeSingle()
+
+          if (!sessionData?.access_token || !apiKeyData?.api_key) {
+            return Response.json({
+              status: "error",
+              message: "Not authenticated. Please login to Zerodha first."
+            }, { headers: corsHeaders })
+          }
+
+          await logActivity(supabaseClient, 'info', 'Fetching instruments from Zerodha API')
+
+          // Fetch instruments from Zerodha
           const instrumentsResponse = await fetch(`${KITE_API_BASE}/instruments`, {
             method: 'GET',
             headers: {
-              'Authorization': `token ${instrumentsApiKeyData.api_key}:${instrumentsSessionData.access_token}`,
+              'Authorization': `token ${apiKeyData.api_key}:${sessionData.access_token}`,
               'X-Kite-Version': '3'
             }
           })
 
           if (!instrumentsResponse.ok) {
+            const errorData = await instrumentsResponse.json()
             return Response.json({
               status: "error",
-              message: "Failed to fetch instruments from Zerodha API"
+              message: errorData.message || "Failed to fetch instruments"
             }, { headers: corsHeaders })
           }
 
@@ -417,34 +515,34 @@ serve(async (req) => {
           const lines = instrumentsText.split('\n')
           const instruments = []
           
-          // Parse CSV data - Include all NSE equity instruments
-          for (let i = 1; i < lines.length; i++) {
-            const cols = lines[i].split(',')
-            if (cols.length >= 8) {
-              const symbol = cols[2]?.replace(/"/g, '')
-              const exchange = cols[11]?.replace(/"/g, '')
-              const instrumentType = cols[9]?.replace(/"/g, '')
-              
-              // Include all NSE equity instruments (stocks)
-              if (exchange === 'NSE' && instrumentType === 'EQ' && symbol && symbol.length > 0) {
-                instruments.push({
-                  symbol: symbol,
-                  instrument_token: parseInt(cols[0]) || 0,
-                  exchange: exchange,
-                  name: cols[1]?.replace(/"/g, '') || symbol,
-                  is_nifty50: false, // Will be determined by actual data
-                  is_banknifty: false
-                })
-              }
+          // Parse CSV data (skip header)
+          for (let i = 1; i < lines.length && instruments.length < 100; i++) {
+            const fields = lines[i].split(',')
+            if (fields.length >= 3 && fields[2] === 'NSE') {
+              instruments.push({
+                instrument_token: parseInt(fields[0]),
+                exchange_token: fields[1],
+                exchange: fields[2],
+                tradingsymbol: fields[3],
+                name: fields[4],
+                expiry: fields[5],
+                strike: fields[6],
+                tick_size: fields[7],
+                lot_size: fields[8],
+                instrument_type: fields[9],
+                segment: fields[10]
+              })
             }
           }
 
-          await logActivity(supabaseClient, 'success', `Successfully fetched ${instruments.length} instruments from Zerodha`)
+          await logActivity(supabaseClient, 'success', `Fetched ${instruments.length} instruments from Zerodha`)
           return Response.json({
             status: "success",
             message: "Instruments fetched successfully",
             data: {
               instruments: instruments,
+              nifty50_stocks: ['RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'HINDUNILVR'],
+              banknifty_stocks: ['HDFCBANK', 'ICICIBANK', 'KOTAKBANK', 'SBIN'],
               count: instruments.length
             }
           }, { headers: corsHeaders })
@@ -457,129 +555,30 @@ serve(async (req) => {
         }
         break
 
-      case '/start_live_trading':
-        const { symbols } = data
-        
-        const { error: tradingError } = await supabaseClient
-          .from('trading_sessions')
-          .upsert({
-            id: 1,
-            trading_active: true,
-            symbols: symbols,
-            updated_at: new Date().toISOString()
-          })
-
-        if (tradingError) {
-          return Response.json({
-            status: "error",
-            message: tradingError.message
-          }, { headers: corsHeaders })
-        }
-
-        const symbolNames = symbols.map((s: any) => s.symbol).join(', ')
-        await logActivity(supabaseClient, 'success', `Live trading started for symbols: ${symbolNames}`)
-        return Response.json({
-          status: "success",
-          message: "Live trading started",
-          data: { symbols: symbols.map((s: any) => s.symbol) }
-        }, { headers: corsHeaders })
-        break
-
-      case '/stop_live_trading':
-        await logActivity(supabaseClient, 'info', 'Stopping live trading')
-        const { error: stopError } = await supabaseClient
-          .from('trading_sessions')
-          .update({
-            trading_active: false,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', 1)
-
-        if (stopError) {
-          await logActivity(supabaseClient, 'error', `Failed to stop live trading: ${stopError.message}`)
-          return Response.json({
-            status: "error",
-            message: stopError.message
-          }, { headers: corsHeaders })
-        }
-
-        await logActivity(supabaseClient, 'success', 'Live trading stopped successfully')
-        return Response.json({
-          status: "success",
-          message: "Live trading stopped"
-        }, { headers: corsHeaders })
-        break
-
-      case '/get_live_status':
-        const { data: liveSessionData } = await supabaseClient
-          .from('trading_sessions')
-          .select('*')
-          .eq('id', 1)
-          .maybeSingle()
-
-        const live_status = {
-          market_open: true,
-          active_positions: 0,
-          total_positions: 0,
-          monitoring_symbols: liveSessionData?.symbols ? liveSessionData.symbols.length : 0,
-          positions_detail: [],
-          strategy_logs: []
-        }
-
-        return Response.json({
-          status: "success",
-          message: "Live status retrieved",
-          data: { live_status }
-        }, { headers: corsHeaders })
-        break
-
-      case '/update_settings':
-        const { settings } = data
-        
-        const { error: settingsError } = await supabaseClient
-          .from('trading_settings')
-          .upsert({
-            id: 1,
-            settings: settings,
-            updated_at: new Date().toISOString()
-          })
-
-        if (settingsError) {
-          return Response.json({
-            status: "error",
-            message: settingsError.message
-          }, { headers: corsHeaders })
-        }
-
-        return Response.json({
-          status: "success",
-          message: "Settings updated successfully"
-        }, { headers: corsHeaders })
-        break
-
       case '/get_balance':
-        const { data: balanceSessionData } = await supabaseClient
-          .from('trading_sessions')
-          .select('access_token, user_id')
-          .eq('id', 1)
-          .maybeSingle()
-
-        const { data: balanceApiKeyData } = await supabaseClient
-          .from('trading_credentials')
-          .select('api_key')
-          .eq('id', 1)
-          .maybeSingle()
-
-        if (!balanceSessionData?.access_token || !balanceApiKeyData?.api_key) {
-          return Response.json({
-            status: "error",
-            message: "Not authenticated. Please login to Zerodha first."
-          }, { headers: corsHeaders })
-        }
-
         try {
-          // Fetch real balance from Zerodha API
-          const fundsResponse = await fetch(`${KITE_API_BASE}/user/margins`, {
+          const { data: balanceSessionData } = await supabaseClient
+            .from('trading_sessions')
+            .select('access_token, user_id')
+            .eq('id', 1)
+            .maybeSingle()
+
+          const { data: balanceApiKeyData } = await supabaseClient
+            .from('trading_credentials')
+            .select('api_key')
+            .eq('id', 1)
+            .maybeSingle()
+
+          if (!balanceSessionData?.access_token || !balanceApiKeyData?.api_key) {
+            return Response.json({
+              status: "error",
+              message: "Not authenticated. Please login to Zerodha first."
+            }, { headers: corsHeaders })
+          }
+
+          await logActivity(supabaseClient, 'info', 'Fetching account balance from Zerodha')
+
+          const marginsResponse = await fetch(`${KITE_API_BASE}/user/margins`, {
             method: 'GET',
             headers: {
               'Authorization': `token ${balanceApiKeyData.api_key}:${balanceSessionData.access_token}`,
@@ -587,21 +586,22 @@ serve(async (req) => {
             }
           })
 
-          if (!fundsResponse.ok) {
+          if (!marginsResponse.ok) {
+            const errorData = await marginsResponse.json()
             return Response.json({
               status: "error",
-              message: "Failed to fetch balance from Zerodha API"
+              message: errorData.message || "Failed to fetch balance"
             }, { headers: corsHeaders })
           }
 
-          const balanceData = await fundsResponse.json()
-
-          await logActivity(supabaseClient, 'success', `Balance retrieved successfully for user: ${balanceSessionData.user_id}`)
+          const marginsData = await marginsResponse.json()
+          
+          await logActivity(supabaseClient, 'success', `Account balance fetched for user ${balanceSessionData.user_id}`)
           return Response.json({
             status: "success",
-            message: "Balance retrieved",
-            data: { 
-              balance: balanceData.data,
+            message: "Balance fetched successfully",
+            data: {
+              balance: marginsData.data,
               user_id: balanceSessionData.user_id
             }
           }, { headers: corsHeaders })
@@ -614,42 +614,119 @@ serve(async (req) => {
         }
         break
 
-      case '/get_historical_data':
-        const { symbol, instrument_token, interval = '3minute', days = 30 } = data
+      case '/start_live_trading':
+        const { symbols } = data
         
-        const { data: histSessionData } = await supabaseClient
-          .from('trading_sessions')
-          .select('access_token')
-          .eq('id', 1)
-          .maybeSingle()
-
-        const { data: histApiKeyData } = await supabaseClient
-          .from('trading_credentials')
-          .select('api_key')
-          .eq('id', 1)
-          .maybeSingle()
-
-        if (!histSessionData?.access_token || !histApiKeyData?.api_key) {
+        if (!symbols || !Array.isArray(symbols)) {
           return Response.json({
             status: "error",
-            message: "Not authenticated. Please login to Zerodha first."
-          }, { headers: corsHeaders })
-        }
-
-        if (!instrument_token) {
-          return Response.json({
-            status: "error",
-            message: "Instrument token is required"
+            message: "Symbols array is required"
           }, { headers: corsHeaders })
         }
 
         try {
-          const toDate = new Date()
-          const fromDate = new Date(toDate.getTime() - (days * 24 * 60 * 60 * 1000))
+          const { error: tradingError } = await supabaseClient
+            .from('trading_sessions')
+            .update({
+              trading_active: true,
+              symbols: symbols,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', 1)
+
+          if (tradingError) {
+            return Response.json({
+              status: "error",
+              message: "Failed to start live trading"
+            }, { headers: corsHeaders })
+          }
+
+          const symbolNames = symbols.map(s => s.symbol).join(', ')
+          await logActivity(supabaseClient, 'success', `Live trading started for symbols: ${symbolNames}`)
           
-          const historicalResponse = await fetch(
-            `${KITE_API_BASE}/instruments/historical/${instrument_token}/${interval}?` +
-            `from=${fromDate.toISOString().split('T')[0]}&to=${toDate.toISOString().split('T')[0]}`, {
+          return Response.json({
+            status: "success",
+            message: "Live trading started",
+            data: {
+              symbols: symbolNames.split(', ')
+            }
+          }, { headers: corsHeaders })
+        } catch (error) {
+          await logActivity(supabaseClient, 'error', `Failed to start live trading: ${error.message}`)
+          return Response.json({
+            status: "error",
+            message: "Failed to start live trading: " + error.message
+          }, { headers: corsHeaders })
+        }
+        break
+
+      case '/stop_live_trading':
+        try {
+          const { error: stopError } = await supabaseClient
+            .from('trading_sessions')
+            .update({
+              trading_active: false,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', 1)
+
+          if (stopError) {
+            return Response.json({
+              status: "error",
+              message: "Failed to stop live trading"
+            }, { headers: corsHeaders })
+          }
+
+          await logActivity(supabaseClient, 'info', 'Live trading stopped')
+          return Response.json({
+            status: "success",
+            message: "Live trading stopped"
+          }, { headers: corsHeaders })
+        } catch (error) {
+          await logActivity(supabaseClient, 'error', `Failed to stop live trading: ${error.message}`)
+          return Response.json({
+            status: "error",
+            message: "Failed to stop live trading: " + error.message
+          }, { headers: corsHeaders })
+        }
+        break
+
+      case '/get_historical_data':
+        const { symbol, instrument_token, interval = '3minute', days = 30 } = data
+        
+        if (!symbol || !instrument_token) {
+          return Response.json({
+            status: "error",
+            message: "Symbol and instrument_token are required"
+          }, { headers: corsHeaders })
+        }
+
+        try {
+          const { data: histSessionData } = await supabaseClient
+            .from('trading_sessions')
+            .select('access_token')
+            .eq('id', 1)
+            .maybeSingle()
+
+          const { data: histApiKeyData } = await supabaseClient
+            .from('trading_credentials')
+            .select('api_key')
+            .eq('id', 1)
+            .maybeSingle()
+
+          if (!histSessionData?.access_token || !histApiKeyData?.api_key) {
+            return Response.json({
+              status: "error",
+              message: "Not authenticated. Please login to Zerodha first."
+            }, { headers: corsHeaders })
+          }
+
+          await logActivity(supabaseClient, 'info', `Fetching historical data for ${symbol}`, symbol)
+
+          const fromDate = new Date()
+          fromDate.setDate(fromDate.getDate() - days)
+          
+          const histResponse = await fetch(`${KITE_API_BASE}/instruments/historical/${instrument_token}/${interval}?from=${fromDate.toISOString().split('T')[0]}&to=${new Date().toISOString().split('T')[0]}`, {
             method: 'GET',
             headers: {
               'Authorization': `token ${histApiKeyData.api_key}:${histSessionData.access_token}`,
@@ -657,15 +734,16 @@ serve(async (req) => {
             }
           })
 
-          if (!historicalResponse.ok) {
+          if (!histResponse.ok) {
+            const errorData = await histResponse.json()
             return Response.json({
               status: "error",
-              message: "Failed to fetch historical data from Zerodha API"
+              message: errorData.message || "Failed to fetch historical data"
             }, { headers: corsHeaders })
           }
 
-          const historicalData = await historicalResponse.json()
-          const candles = historicalData.data.candles.map((candle: any) => ({
+          const histData = await histResponse.json()
+          const candles = histData.data.candles.map((candle: any) => ({
             timestamp: candle[0],
             open: candle[1],
             high: candle[2],
@@ -674,11 +752,15 @@ serve(async (req) => {
             volume: candle[5]
           }))
 
-          const signal = analyzeIntradayStrategy(candles)
+          // Apply comprehensive strategy
+          const signal = analyzeComprehensiveStrategy(candles)
+          signal.symbol = symbol
 
+          await logActivity(supabaseClient, 'success', `Historical data fetched for ${symbol}. Signal: ${signal.action}`, symbol)
+          
           return Response.json({
             status: "success",
-            message: "Historical data retrieved",
+            message: "Historical data fetched",
             data: {
               symbol: symbol,
               candles: candles,
@@ -687,6 +769,7 @@ serve(async (req) => {
             }
           }, { headers: corsHeaders })
         } catch (error) {
+          await logActivity(supabaseClient, 'error', `Failed to fetch historical data for ${symbol}: ${error.message}`, symbol)
           return Response.json({
             status: "error",
             message: "Failed to fetch historical data: " + error.message
@@ -783,7 +866,7 @@ serve(async (req) => {
           }, { headers: corsHeaders })
         }
 
-        await logActivity(supabaseClient, 'info', `Starting strategy analysis for ${analyzeSymbols.length} symbols`)
+        await logActivity(supabaseClient, 'info', `Starting comprehensive strategy analysis for ${analyzeSymbols.length} symbols`)
 
         // Get session data for API calls
         const { data: analysisSessionData } = await supabaseClient
@@ -809,7 +892,7 @@ serve(async (req) => {
         
         for (const symbol of analyzeSymbols) {
           try {
-            await logActivity(supabaseClient, 'info', `Analyzing ${symbol.symbol}`, symbol.symbol)
+            await logActivity(supabaseClient, 'info', `Analyzing ${symbol.symbol} using comprehensive strategy`, symbol.symbol)
 
             // Get historical data from Zerodha API
             const fromDate = new Date()
@@ -838,12 +921,12 @@ serve(async (req) => {
               volume: candle[5]
             }))
 
-            // Apply strategy logic
-            const signal = analyzeIntradayStrategy(candles)
+            // Apply comprehensive strategy logic
+            const signal = analyzeComprehensiveStrategy(candles)
             signal.symbol = symbol.symbol
             
             if (signal.action !== 'HOLD') {
-              await logActivity(supabaseClient, 'success', `Strategy signal generated for ${symbol.symbol}: ${signal.action} at ${signal.price}`, symbol.symbol)
+              await logActivity(supabaseClient, 'success', `COMPREHENSIVE STRATEGY SIGNAL: ${symbol.symbol} ${signal.action} at ₹${signal.price}. Reason: ${signal.reason}`, symbol.symbol)
             } else {
               await logActivity(supabaseClient, 'info', `No trading signal for ${symbol.symbol}: ${signal.reason}`, symbol.symbol)
             }
@@ -859,11 +942,11 @@ serve(async (req) => {
           }
         }
 
-        await logActivity(supabaseClient, 'success', `Strategy analysis completed. Generated ${signals.filter(s => s.action !== 'HOLD').length} trading signals out of ${signals.length} symbols analyzed`)
+        await logActivity(supabaseClient, 'success', `Comprehensive strategy analysis completed. Generated ${signals.filter(s => s.action !== 'HOLD').length} trading signals out of ${signals.length} symbols analyzed`)
 
         return Response.json({
           status: "success",
-          message: "Symbols analyzed",
+          message: "Symbols analyzed using comprehensive strategy",
           data: {
             signals: signals,
             timestamp: new Date().toISOString(),
@@ -964,7 +1047,7 @@ serve(async (req) => {
             .limit(50)
 
           // Get active trading session
-          const { data: sessionData } = await supabaseClient
+          const { data: liveSessionData } = await supabaseClient
             .from('trading_sessions')
             .select('*')
             .eq('id', 1)
@@ -978,7 +1061,7 @@ serve(async (req) => {
 
           // Get balance data if authenticated
           let balanceData = null
-          if (sessionData?.access_token) {
+          if (liveSessionData?.access_token) {
             try {
               const { data: apiKeyData } = await supabaseClient
                 .from('trading_credentials')
@@ -990,7 +1073,7 @@ serve(async (req) => {
                 const balanceResponse = await fetch(`${KITE_API_BASE}/user/margins`, {
                   method: 'GET',
                   headers: {
-                    'Authorization': `token ${apiKeyData.api_key}:${sessionData.access_token}`,
+                    'Authorization': `token ${apiKeyData.api_key}:${liveSessionData.access_token}`,
                     'X-Kite-Version': '3'
                   }
                 })
@@ -1007,8 +1090,8 @@ serve(async (req) => {
 
           const liveStatus = {
             is_market_open: true,
-            live_trading_active: sessionData?.trading_active || false,
-            selected_symbols: sessionData?.symbols || [],
+            live_trading_active: liveSessionData?.trading_active || false,
+            selected_symbols: liveSessionData?.symbols || [],
             active_positions: positionsData || [],
             strategy_logs: logsData || [],
             balance: balanceData,
