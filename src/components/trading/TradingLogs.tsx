@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FileText, Download, RefreshCw, Activity, AlertCircle } from "lucide-react";
 import { useState, useEffect } from "react";
+import { format } from "date-fns";
+import { formatInTimeZone } from "date-fns-tz";
 import { tradingApi } from "@/services/trading-api";
 import { useToast } from "@/hooks/use-toast";
 
@@ -105,12 +107,12 @@ export function TradingLogs({
   };
 
   const formatTimestamp = (timestamp: string) => {
-    return new Date(timestamp).toLocaleTimeString('en-US', {
-      hour12: false,
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    });
+    // Convert UTC timestamp to IST (Indian Standard Time)
+    return formatInTimeZone(
+      new Date(timestamp), 
+      'Asia/Kolkata', 
+      'HH:mm:ss'
+    );
   };
 
   const displayLogs = activityLogs.length > 0 ? activityLogs : logs;
