@@ -14,6 +14,7 @@ interface TradingSettingsProps {
 
 export function TradingSettingsComponent({ isConnected }: TradingSettingsProps) {
   const [settings, setSettings] = useState<TradingSettings>({
+    quantity: 2, // Default quantity
     fixed_capital_per_trade: 100000,
     risk_percent: 2,
     leverage: 1,
@@ -69,6 +70,7 @@ export function TradingSettingsComponent({ isConnected }: TradingSettingsProps) 
 
   const resetToDefaults = () => {
     setSettings({
+      quantity: 2,
       fixed_capital_per_trade: 100000,
       risk_percent: 2,
       leverage: 1,
@@ -100,18 +102,34 @@ export function TradingSettingsComponent({ isConnected }: TradingSettingsProps) 
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Position Sizing */}
+        {/* Quantity Configuration */}
         <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Quantity per Trade</Label>
+            <Input
+              type="number"
+              min="1"
+              max="10000"
+              value={settings.quantity}
+              onChange={(e) => handleSettingChange('quantity', parseInt(e.target.value) || 2)}
+              placeholder="2"
+              className="bg-input border-border text-foreground"
+            />
+            <p className="text-sm text-muted-foreground">
+              Number of shares/units to trade per signal (default: 2)
+            </p>
+          </div>
+
           <div className="space-y-2">
             <Label>Position Sizing Method</Label>
             <Select
               value={settings.position_sizing}
               onValueChange={(value) => handleSettingChange('position_sizing', value)}
             >
-              <SelectTrigger>
+              <SelectTrigger className="bg-input border-border">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="bg-popover border-border">
                 <SelectItem value="fixed_capital">Fixed Capital per Trade</SelectItem>
                 <SelectItem value="fixed_risk">Fixed Risk Percentage</SelectItem>
               </SelectContent>
@@ -280,20 +298,28 @@ export function TradingSettingsComponent({ isConnected }: TradingSettingsProps) 
               <div className="font-medium">₹0.10</div>
             </div>
             <div>
-              <div className="text-muted-foreground">Stop Loss Offset</div>
-              <div className="font-medium">₹0.15</div>
+              <div className="text-muted-foreground">Stop Loss</div>
+              <div className="font-medium">Rejection Low/High ± ₹0.15</div>
             </div>
             <div>
               <div className="text-muted-foreground">Risk:Reward</div>
-              <div className="font-medium">1:5</div>
+              <div className="font-medium">1:5 (Based on rejection candle)</div>
             </div>
             <div>
               <div className="text-muted-foreground">Min Wick %</div>
               <div className="font-medium">15% of range</div>
             </div>
             <div>
-              <div className="text-muted-foreground">Setup Time</div>
-              <div className="font-medium">09:57:00-09:59:59</div>
+              <div className="text-muted-foreground">Setup Candle</div>
+              <div className="font-medium">Closes at 10:00:00 AM</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Entry Window</div>
+              <div className="font-medium">10:00 AM - 12:59:59 PM</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Rejection Rule</div>
+              <div className="font-medium">First rejection only per day</div>
             </div>
           </div>
         </div>

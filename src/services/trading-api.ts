@@ -62,6 +62,7 @@ export interface CandleData {
 }
 
 export interface TradingSettings {
+  quantity: number; // User-configurable quantity per trade
   fixed_capital_per_trade: number;
   risk_percent: number;
   leverage: number;

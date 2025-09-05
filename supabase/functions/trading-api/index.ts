@@ -901,9 +901,8 @@ serve(async (req) => {
               volume: candle[5]
             }))
 
-            // Analyze strategy for this symbol
-            const signal = analyzeIntradayStrategy(candles)
-            signal.symbol = symbol
+            // Analyze strategy for this symbol with database integration
+            const signal = await analyzeIntradayStrategy(candles, symbol, supabaseClient)
 
             return Response.json({
               status: "success",
@@ -1337,8 +1336,7 @@ serve(async (req) => {
                   volume: candle[5]
                 }))
 
-                const signal = analyzeIntradayStrategy(candles)
-                signal.symbol = sym.symbol
+                const signal = await analyzeIntradayStrategy(candles, sym.symbol, supabaseClient)
                 signals.push(signal)
               }
             }

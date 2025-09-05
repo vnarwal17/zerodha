@@ -50,6 +50,51 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_rejection_states: {
+        Row: {
+          created_at: string
+          id: string
+          invalidated: boolean | null
+          invalidation_reason: string | null
+          rejection_candle_data: Json | null
+          rejection_candle_found: boolean | null
+          rejection_candle_timestamp: string | null
+          setup_candle_data: Json | null
+          sma_level: number | null
+          symbol: string
+          trade_date: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          invalidated?: boolean | null
+          invalidation_reason?: string | null
+          rejection_candle_data?: Json | null
+          rejection_candle_found?: boolean | null
+          rejection_candle_timestamp?: string | null
+          setup_candle_data?: Json | null
+          sma_level?: number | null
+          symbol: string
+          trade_date?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          invalidated?: boolean | null
+          invalidation_reason?: string | null
+          rejection_candle_data?: Json | null
+          rejection_candle_found?: boolean | null
+          rejection_candle_timestamp?: string | null
+          setup_candle_data?: Json | null
+          sma_level?: number | null
+          symbol?: string
+          trade_date?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       trade_logs: {
         Row: {
           action: string
@@ -252,18 +297,21 @@ export type Database = {
         Row: {
           created_at: string
           id: number
+          quantity: number | null
           settings: Json | null
           updated_at: string
         }
         Insert: {
           created_at?: string
           id?: number
+          quantity?: number | null
           settings?: Json | null
           updated_at?: string
         }
         Update: {
           created_at?: string
           id?: number
+          quantity?: number | null
           settings?: Json | null
           updated_at?: string
         }
@@ -275,6 +323,10 @@ export type Database = {
     }
     Functions: {
       cleanup_expired_sessions: {
+        Args: Record<PropertyKey, never>
+        Returns: number
+      }
+      cleanup_old_rejection_states: {
         Args: Record<PropertyKey, never>
         Returns: number
       }
