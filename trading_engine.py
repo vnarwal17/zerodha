@@ -207,7 +207,7 @@ class TradingEngine:
         quantity = self._calculate_quantity(entry_price, stop_loss)
         
         if not self.settings.dry_run:
-            # Place actual order
+            # Place actual order using the exact format specification
             order_result = await self.zerodha.place_order(
                 symbol=symbol,
                 transaction_type="BUY" if direction == "long" else "SELL",
@@ -274,11 +274,12 @@ class TradingEngine:
     async def _exit_position(self, position: Position, exit_price: float, reason: str):
         """Exit a position"""
         if not self.settings.dry_run:
-            # Place exit order
+            # Place exit order using the exact format specification
             await self.zerodha.place_order(
                 symbol=position.symbol,
                 transaction_type="SELL" if position.direction == "long" else "BUY",
-                quantity=position.quantity
+                quantity=position.quantity,
+                price=exit_price
             )
         
         # Update position

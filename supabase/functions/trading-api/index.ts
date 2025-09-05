@@ -964,7 +964,7 @@ serve(async (req) => {
           
           const { data: testSessionData } = await supabaseClient
             .from('trading_sessions')
-            .select('access_token')
+            .select('access_token, user_id')
             .eq('id', 1)
             .maybeSingle()
 
@@ -984,17 +984,23 @@ serve(async (req) => {
             }, { headers: corsHeaders })
           }
 
-          // Place a minimal test order - 1 share of SBIN (State Bank of India)
+          // Order data in exact format as shown in your image
           const testOrderParams = new URLSearchParams({
-            tradingsymbol: test_symbol,
+            variety: 'regular',
             exchange: 'NSE',
+            tradingsymbol: test_symbol,
             transaction_type: 'BUY',
-            order_type: 'MARKET',
-            quantity: '1', // Minimal quantity for testing
-            product: 'MIS', // Intraday
+            order_type: 'LIMIT',
+            quantity: '1',
+            price: '221', // Example price as shown in image
+            product: 'CNC',
             validity: 'DAY',
-            market_protection: '-1', // Auto protection
-            tag: 'API_TEST'
+            disclosed_quantity: '0',
+            trigger_price: '0',
+            squareoff: '0',
+            stoploss: '0',
+            trailing_stoploss: '0',
+            user_id: testSessionData.user_id
           });
 
           console.log('Placing test order with params:', Object.fromEntries(testOrderParams));

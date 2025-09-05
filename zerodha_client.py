@@ -175,22 +175,30 @@ class ZerodhaClient:
             return {}
     
     async def place_order(self, symbol: str, transaction_type: str, quantity: int, price: Optional[float] = None) -> Dict[str, Any]:
-        """Place an order"""
+        """Place an order using the exact format shown in the image"""
         try:
-            order_params = {
+            # Order data in exact format as specified
+            order_data = {
+                'variety': 'regular',
+                'exchange': 'NSE', 
                 'tradingsymbol': symbol,
-                'exchange': self.kite.EXCHANGE_NSE,
                 'transaction_type': transaction_type,
+                'order_type': 'LIMIT' if price else 'MARKET',
                 'quantity': quantity,
-                'product': self.kite.PRODUCT_MIS,  # Intraday
-                'order_type': self.kite.ORDER_TYPE_MARKET if price is None else self.kite.ORDER_TYPE_LIMIT,
-                'variety': self.kite.VARIETY_REGULAR
+                'product': 'CNC',  # Cash and Carry for delivery
+                'validity': 'DAY',
+                'disclosed_quantity': 0,
+                'trigger_price': 0,
+                'squareoff': 0,
+                'stoploss': 0,
+                'trailing_stoploss': 0,
+                'user_id': self.user_id
             }
             
             if price:
-                order_params['price'] = price
+                order_data['price'] = price
             
-            order_id = self.kite.place_order(**order_params)
+            order_id = self.kite.place_order(**order_data)
             return {'status': 'success', 'order_id': order_id}
         except Exception as e:
             logger.error(f"Order placement error: {e}")
