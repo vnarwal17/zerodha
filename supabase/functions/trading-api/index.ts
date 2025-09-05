@@ -783,32 +783,83 @@ serve(async (req) => {
           }, { headers: corsHeaders })
         }
 
+        await logActivity(supabaseClient, 'info', `Starting strategy analysis for ${analyzeSymbols.length} symbols`)
+
+        // Get session data for API calls
+        const { data: analysisSessionData } = await supabaseClient
+          .from('trading_sessions')
+          .select('access_token')
+          .eq('id', 1)
+          .maybeSingle()
+
+        const { data: analysisApiKeyData } = await supabaseClient
+          .from('trading_credentials')
+          .select('api_key')
+          .eq('id', 1)
+          .maybeSingle()
+
+        if (!analysisSessionData?.access_token || !analysisApiKeyData?.api_key) {
+          return Response.json({
+            status: "error",
+            message: "Not authenticated. Please login to Zerodha first."
+          }, { headers: corsHeaders })
+        }
+
         const signals = []
         
         for (const symbol of analyzeSymbols) {
           try {
-            // Get historical data for each symbol and analyze
-            const histData = await fetch(`${req.url}`, {
-              method: 'POST',
-              headers: req.headers,
-              body: JSON.stringify({
-                path: '/get_historical_data',
-                symbol: symbol.symbol,
-                instrument_token: symbol.instrument_token
-              })
-            })
+            await logActivity(supabaseClient, 'info', `Analyzing ${symbol.symbol}`, symbol.symbol)
+
+            // Get historical data from Zerodha API
+            const fromDate = new Date()
+            fromDate.setDate(fromDate.getDate() - 60) // 60 days of data for SMA50
             
-            if (histData.ok) {
-              const histResult = await histData.json()
-              if (histResult.status === 'success') {
-                signals.push(histResult.data.signal)
+            const histResponse = await fetch(`${KITE_API_BASE}/instruments/historical/${symbol.instrument_token}/3minute?from=${fromDate.toISOString().split('T')[0]}&to=${new Date().toISOString().split('T')[0]}`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `token ${analysisApiKeyData.api_key}:${analysisSessionData.access_token}`,
+                'X-Kite-Version': '3'
               }
+            })
+
+            if (!histResponse.ok) {
+              await logActivity(supabaseClient, 'warning', `Failed to get historical data for ${symbol.symbol}`, symbol.symbol)
+              continue
             }
+
+            const histData = await histResponse.json()
+            const candles = histData.data.candles.map((candle: any) => ({
+              timestamp: candle[0],
+              open: candle[1],
+              high: candle[2],
+              low: candle[3],
+              close: candle[4],
+              volume: candle[5]
+            }))
+
+            // Apply strategy logic
+            const signal = analyzeIntradayStrategy(candles)
+            signal.symbol = symbol.symbol
+            
+            if (signal.action !== 'HOLD') {
+              await logActivity(supabaseClient, 'success', `Strategy signal generated for ${symbol.symbol}: ${signal.action} at ${signal.price}`, symbol.symbol)
+            } else {
+              await logActivity(supabaseClient, 'info', `No trading signal for ${symbol.symbol}: ${signal.reason}`, symbol.symbol)
+            }
+            
+            signals.push({
+              ...signal,
+              symbol: symbol.symbol
+            })
+
           } catch (error) {
-            // Skip failed symbols
+            await logActivity(supabaseClient, 'error', `Failed to analyze ${symbol.symbol}: ${error.message}`, symbol.symbol)
             console.warn(`Failed to analyze ${symbol.symbol}:`, error)
           }
         }
+
+        await logActivity(supabaseClient, 'success', `Strategy analysis completed. Generated ${signals.filter(s => s.action !== 'HOLD').length} trading signals out of ${signals.length} symbols analyzed`)
 
         return Response.json({
           status: "success",
