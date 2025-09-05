@@ -88,6 +88,118 @@ function isValidRejectionCandle(candle: CandleData, sma50: number, bias: 'LONG' 
   return false;
 }
 
+// ============= ENCRYPTION UTILITIES =============
+async function getEncryptionKey(): Promise<CryptoKey> {
+  const keyData = Deno.env.get('ENCRYPTION_KEY')
+  if (!keyData) {
+    throw new Error('Encryption key not configured')
+  }
+  
+  const keyBytes = new TextEncoder().encode(keyData.padEnd(32, '0').substring(0, 32))
+  return await crypto.subtle.importKey(
+    'raw',
+    keyBytes,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt', 'decrypt']
+  )
+}
+
+async function encryptData(data: string): Promise<string> {
+  const key = await getEncryptionKey()
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const encodedData = new TextEncoder().encode(data)
+  
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    encodedData
+  )
+  
+  const combined = new Uint8Array(iv.length + encrypted.byteLength)
+  combined.set(iv)
+  combined.set(new Uint8Array(encrypted), iv.length)
+  
+  return btoa(String.fromCharCode(...combined))
+}
+
+async function decryptData(encryptedData: string): Promise<string> {
+  try {
+    const key = await getEncryptionKey()
+    const combined = new Uint8Array(atob(encryptedData).split('').map(c => c.charCodeAt(0)))
+    const iv = combined.slice(0, 12)
+    const data = combined.slice(12)
+    
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv },
+      key,
+      data
+    )
+    
+    return new TextDecoder().decode(decrypted)
+  } catch (error) {
+    console.error('Decryption failed:', error)
+    throw new Error('Failed to decrypt data')
+  }
+}
+
+// ============= SESSION SECURITY UTILITIES =============
+async function generateSessionHash(): Promise<string> {
+  const bytes = crypto.getRandomValues(new Uint8Array(32))
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+function extractClientInfo(req: Request): { ip_address?: string; user_agent?: string } {
+  const forwarded = req.headers.get('x-forwarded-for')
+  const ip_address = forwarded ? forwarded.split(',')[0].trim() : req.headers.get('x-real-ip') || 'unknown'
+  const user_agent = req.headers.get('user-agent') || 'unknown'
+  
+  return { ip_address, user_agent }
+}
+
+async function validateSessionSecurity(sessionData: any, clientInfo: any): Promise<boolean> {
+  // Check for suspicious activity patterns
+  if (sessionData.ip_address && sessionData.ip_address !== clientInfo.ip_address) {
+    console.warn('IP address mismatch detected:', {
+      stored: sessionData.ip_address,
+      current: clientInfo.ip_address
+    })
+    // Allow IP changes for now, but log for monitoring
+  }
+  
+  return true
+}
+
+async function rotateSessionIfNeeded(supabaseClient: any, sessionId: number): Promise<void> {
+  const { data: sessionData } = await supabaseClient
+    .from('trading_sessions')
+    .select('last_activity, token_version')
+    .eq('id', sessionId)
+    .maybeSingle()
+  
+  if (sessionData?.last_activity) {
+    const lastActivity = new Date(sessionData.last_activity)
+    const hoursSinceActivity = (Date.now() - lastActivity.getTime()) / (1000 * 60 * 60)
+    
+    // Rotate session hash every 24 hours
+    if (hoursSinceActivity >= 24) {
+      const newSessionHash = await generateSessionHash()
+      const newTokenVersion = (sessionData.token_version || 1) + 1
+      
+      await supabaseClient
+        .from('trading_sessions')
+        .update({
+          session_hash: newSessionHash,
+          token_version: newTokenVersion,
+          last_activity: new Date().toISOString()
+        })
+        .eq('id', sessionId)
+      
+      console.log('Session rotated for security')
+    }
+  }
+}
+
 function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
   if (candles.length < 50) {
     return {
@@ -347,12 +459,37 @@ serve(async (req) => {
             const tokenData = await tokenResponse.json()
 
             if (tokenResponse.ok && tokenData.status === 'success') {
-              // Store access token and user data
+              // Extract client information for security
+              const clientInfo = extractClientInfo(req)
+              
+              // Generate secure session hash
+              const sessionHash = await generateSessionHash()
+              
+              // Encrypt sensitive tokens
+              const encryptedAccessToken = await encryptData(tokenData.data.access_token)
+              const encryptedRequestToken = await encryptData(request_token)
+              
+              // Calculate session expiration (24 hours)
+              const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000)
+              
+              // Store access token and user data securely
               const { error: sessionError } = await supabaseClient
                 .from('trading_sessions')
                 .upsert({
                   id: 1,
+                  // Keep legacy fields for backward compatibility
                   access_token: tokenData.data.access_token,
+                  request_token: request_token,
+                  // Add encrypted versions
+                  encrypted_access_token: encryptedAccessToken,
+                  encrypted_request_token: encryptedRequestToken,
+                  // Session security fields
+                  session_hash: sessionHash,
+                  expires_at: expiresAt.toISOString(),
+                  ip_address: clientInfo.ip_address,
+                  user_agent: clientInfo.user_agent,
+                  token_version: 1,
+                  // User data
                   user_id: tokenData.data.user_id,
                   user_name: tokenData.data.user_name,
                   status: 'authenticated',
@@ -418,13 +555,50 @@ serve(async (req) => {
           .eq('id', 1)
           .maybeSingle()
 
-        if (sessionData && sessionData.access_token && sessionData.status === 'authenticated') {
+        if (sessionData && sessionData.status === 'authenticated') {
+          // Extract client info for security validation
+          const clientInfo = extractClientInfo(req)
+          
+          // Validate session security
+          const isSecure = await validateSessionSecurity(sessionData, clientInfo)
+          if (!isSecure) {
+            return Response.json({
+              status: "disconnected",
+              message: "Session security validation failed"
+            }, { headers: corsHeaders })
+          }
+          
+          // Check session expiration
+          if (sessionData.expires_at && new Date(sessionData.expires_at) < new Date()) {
+            // Mark session as expired
+            await supabaseClient
+              .from('trading_sessions')
+              .update({ 
+                status: 'expired',
+                encrypted_access_token: null,
+                encrypted_request_token: null,
+                access_token: null,
+                request_token: null
+              })
+              .eq('id', 1)
+            
+            return Response.json({
+              status: "disconnected",
+              message: "Session expired, please login again"
+            }, { headers: corsHeaders })
+          }
+          
+          // Rotate session if needed
+          await rotateSessionIfNeeded(supabaseClient, 1)
+          
           return Response.json({
             status: "connected",
             message: "Connected to Zerodha",
             data: {
               user_id: sessionData.user_id,
-              user_name: sessionData.user_name
+              user_name: sessionData.user_name,
+              expires_at: sessionData.expires_at,
+              token_version: sessionData.token_version
             }
           }, { headers: corsHeaders })
         } else {
@@ -438,15 +612,35 @@ serve(async (req) => {
       case '/instruments':
         const { data: instrumentsSessionData } = await supabaseClient
           .from('trading_sessions')
-          .select('access_token')
+          .select('access_token, encrypted_access_token')
           .eq('id', 1)
           .maybeSingle()
 
         const { data: instrumentsApiKeyData } = await supabaseClient
           .from('trading_credentials')
-          .select('api_key')
+          .select('api_key, encrypted_api_key')
           .eq('id', 1)
           .maybeSingle()
+
+        // Get access token - prefer encrypted version
+        let access_token = instrumentsSessionData?.access_token
+        if (instrumentsSessionData?.encrypted_access_token) {
+          try {
+            access_token = await decryptData(instrumentsSessionData.encrypted_access_token)
+          } catch (error) {
+            console.warn('Failed to decrypt access token, using legacy token')
+          }
+        }
+
+        // Get API key - prefer encrypted version  
+        let api_key = instrumentsApiKeyData?.api_key
+        if (instrumentsApiKeyData?.encrypted_api_key) {
+          try {
+            api_key = await decryptData(instrumentsApiKeyData.encrypted_api_key)
+          } catch (error) {
+            console.warn('Failed to decrypt API key, using legacy key')
+          }
+        }
 
         // Define comprehensive stock lists
         const nifty50Stocks = ["RELIANCE", "TCS", "HDFCBANK", "INFY", "HINDUNILVR", "HDFC", "ICICIBANK", "KOTAKBANK", "BHARTIARTL", "ITC", "SBIN", "BAJFINANCE", "ASIANPAINT", "MARUTI", "HCLTECH", "AXISBANK", "LT", "DMART", "SUNPHARMA", "TITAN", "ULTRACEMCO", "NESTLEIND", "WIPRO", "NTPC", "JSWSTEEL", "TECHM", "TATAMOTORS", "INDUSINDBK", "POWERGRID", "BAJAJFINSV", "GRASIM", "ADANIENT", "COALINDIA", "HEROMOTOCO", "CIPLA", "EICHERMOT", "BRITANNIA", "DIVISLAB", "DRREDDY", "APOLLOHOSP", "TATACONSUM", "UPL", "BAJAJ-AUTO", "HINDALCO", "ONGC", "SBILIFE", "BPCL", "TATASTEEL", "HDFCLIFE", "ADANIPORTS"]
@@ -464,13 +658,13 @@ serve(async (req) => {
 
         let instruments = []
 
-        if (instrumentsSessionData?.access_token && instrumentsApiKeyData?.api_key) {
+        if (access_token && api_key) {
           try {
             // Try to fetch real instruments from Zerodha API
             const instrumentsResponse = await fetch(`${KITE_API_BASE}/instruments`, {
               method: 'GET',
               headers: {
-                'Authorization': `token ${instrumentsApiKeyData.api_key}:${instrumentsSessionData.access_token}`,
+                'Authorization': `token ${api_key}:${access_token}`,
                 'X-Kite-Version': '3'
               }
             })
@@ -642,28 +836,41 @@ serve(async (req) => {
       case '/get_balance':
         const { data: balanceSessionData } = await supabaseClient
           .from('trading_sessions')
-          .select('access_token, user_id')
+          .select('access_token, encrypted_access_token, user_id')
           .eq('id', 1)
           .maybeSingle()
-
-        if (!balanceSessionData?.access_token) {
-          return Response.json({
-            status: "error",
-            message: "Not authenticated. Please login first."
-          }, { headers: corsHeaders })
-        }
 
         // Get API key for proper authorization format
         const { data: apiKeyData } = await supabaseClient
           .from('trading_credentials')
-          .select('api_key')
+          .select('api_key, encrypted_api_key')
           .eq('id', 1)
           .maybeSingle()
 
-        if (!apiKeyData?.api_key) {
+        // Get access token - prefer encrypted version
+        let balance_access_token = balanceSessionData?.access_token
+        if (balanceSessionData?.encrypted_access_token) {
+          try {
+            balance_access_token = await decryptData(balanceSessionData.encrypted_access_token)
+          } catch (error) {
+            console.warn('Failed to decrypt access token, using legacy token')
+          }
+        }
+
+        // Get API key - prefer encrypted version  
+        let balance_api_key = apiKeyData?.api_key
+        if (apiKeyData?.encrypted_api_key) {
+          try {
+            balance_api_key = await decryptData(apiKeyData.encrypted_api_key)
+          } catch (error) {
+            console.warn('Failed to decrypt API key, using legacy key')
+          }
+        }
+
+        if (!balance_access_token || !balance_api_key) {
           return Response.json({
             status: "error",
-            message: "API credentials not found."
+            message: "Not authenticated. Please login first."
           }, { headers: corsHeaders })
         }
 
@@ -672,7 +879,7 @@ serve(async (req) => {
           const fundsResponse = await fetch(`${KITE_API_BASE}/user/margins`, {
             method: 'GET',
             headers: {
-              'Authorization': `token ${apiKeyData.api_key}:${balanceSessionData.access_token}`,
+              'Authorization': `token ${balance_api_key}:${balance_access_token}`,
               'X-Kite-Version': '3'
             }
           })
@@ -706,17 +913,37 @@ serve(async (req) => {
         
         const { data: histSessionData } = await supabaseClient
           .from('trading_sessions')
-          .select('access_token')
+          .select('access_token, encrypted_access_token')
           .eq('id', 1)
           .maybeSingle()
 
         const { data: histApiKeyData } = await supabaseClient
           .from('trading_credentials')
-          .select('api_key')
+          .select('api_key, encrypted_api_key')
           .eq('id', 1)
           .maybeSingle()
 
-        if (!histSessionData?.access_token || !histApiKeyData?.api_key) {
+        // Get access token - prefer encrypted version
+        let hist_access_token = histSessionData?.access_token
+        if (histSessionData?.encrypted_access_token) {
+          try {
+            hist_access_token = await decryptData(histSessionData.encrypted_access_token)
+          } catch (error) {
+            console.warn('Failed to decrypt access token, using legacy token')
+          }
+        }
+
+        // Get API key - prefer encrypted version  
+        let hist_api_key = histApiKeyData?.api_key
+        if (histApiKeyData?.encrypted_api_key) {
+          try {
+            hist_api_key = await decryptData(histApiKeyData.encrypted_api_key)
+          } catch (error) {
+            console.warn('Failed to decrypt API key, using legacy key')
+          }
+        }
+
+        if (!hist_access_token || !hist_api_key) {
           return Response.json({
             status: "error",
             message: "Not authenticated. Please login first."
@@ -732,7 +959,7 @@ serve(async (req) => {
             {
               method: 'GET',
               headers: {
-                'Authorization': `token ${histApiKeyData.api_key}:${histSessionData.access_token}`,
+                'Authorization': `token ${hist_api_key}:${hist_access_token}`,
                 'X-Kite-Version': '3'
               }
             }
@@ -782,15 +1009,35 @@ serve(async (req) => {
         
         const { data: tradeSessionData } = await supabaseClient
           .from('trading_sessions')
-          .select('access_token')
+          .select('access_token, encrypted_access_token')
           .eq('id', 1)
           .maybeSingle()
 
         const { data: tradeApiKeyData } = await supabaseClient
           .from('trading_credentials')
-          .select('api_key')
+          .select('api_key, encrypted_api_key')
           .eq('id', 1)
           .maybeSingle()
+
+        // Get access token - prefer encrypted version
+        let trade_access_token = tradeSessionData?.access_token
+        if (tradeSessionData?.encrypted_access_token) {
+          try {
+            trade_access_token = await decryptData(tradeSessionData.encrypted_access_token)
+          } catch (error) {
+            console.warn('Failed to decrypt access token, using legacy token')
+          }
+        }
+
+        // Get API key - prefer encrypted version  
+        let trade_api_key = tradeApiKeyData?.api_key
+        if (tradeApiKeyData?.encrypted_api_key) {
+          try {
+            trade_api_key = await decryptData(tradeApiKeyData.encrypted_api_key)
+          } catch (error) {
+            console.warn('Failed to decrypt API key, using legacy key')
+          }
+        }
 
         // Get trading settings
         const { data: settingsData } = await supabaseClient
@@ -799,7 +1046,7 @@ serve(async (req) => {
           .eq('id', 1)
           .maybeSingle()
 
-        if (!tradeSessionData?.access_token || !tradeApiKeyData?.api_key) {
+        if (!trade_access_token || !trade_api_key) {
           return Response.json({
             status: "error",
             message: "Not authenticated. Please login first."
@@ -838,7 +1085,7 @@ serve(async (req) => {
           const orderResponse = await fetch(`${KITE_API_BASE}/orders/regular`, {
             method: 'POST',
             headers: {
-              'Authorization': `token ${tradeApiKeyData.api_key}:${tradeSessionData.access_token}`,
+              'Authorization': `token ${trade_api_key}:${trade_access_token}`,
               'X-Kite-Version': '3',
               'Content-Type': 'application/x-www-form-urlencoded'
             },
@@ -890,17 +1137,36 @@ serve(async (req) => {
         
         const { data: analyzeSessionData } = await supabaseClient
           .from('trading_sessions')
-          .select('access_token')
+          .select('access_token, encrypted_access_token')
           .eq('id', 1)
           .maybeSingle()
 
         const { data: analyzeApiKeyData } = await supabaseClient
           .from('trading_credentials')
-          .select('api_key')
+          .select('api_key, encrypted_api_key')
           .eq('id', 1)
           .maybeSingle()
 
-        if (!analyzeSessionData?.access_token || !analyzeApiKeyData?.api_key) {
+        // Get tokens - prefer encrypted versions
+        let analyze_access_token = analyzeSessionData?.access_token
+        if (analyzeSessionData?.encrypted_access_token) {
+          try {
+            analyze_access_token = await decryptData(analyzeSessionData.encrypted_access_token)
+          } catch (error) {
+            console.warn('Failed to decrypt access token, using legacy token')
+          }
+        }
+
+        let analyze_api_key = analyzeApiKeyData?.api_key
+        if (analyzeApiKeyData?.encrypted_api_key) {
+          try {
+            analyze_api_key = await decryptData(analyzeApiKeyData.encrypted_api_key)
+          } catch (error) {
+            console.warn('Failed to decrypt API key, using legacy key')
+          }
+        }
+
+        if (!analyze_access_token || !analyze_api_key) {
           return Response.json({
             status: "error",
             message: "Not authenticated. Please login first."
@@ -919,7 +1185,7 @@ serve(async (req) => {
               {
                 method: 'GET',
                 headers: {
-                  'Authorization': `token ${analyzeApiKeyData.api_key}:${analyzeSessionData.access_token}`,
+                  'Authorization': `token ${analyze_api_key}:${analyze_access_token}`,
                   'X-Kite-Version': '3'
                 }
               }
@@ -964,20 +1230,39 @@ serve(async (req) => {
           
           const { data: testSessionData } = await supabaseClient
             .from('trading_sessions')
-            .select('access_token')
+            .select('access_token, encrypted_access_token')
             .eq('id', 1)
             .maybeSingle()
 
           const { data: testApiKeyData } = await supabaseClient
             .from('trading_credentials')
-            .select('api_key')
+            .select('api_key, encrypted_api_key')
             .eq('id', 1)
             .maybeSingle()
+
+          // Get tokens - prefer encrypted versions
+          let test_access_token = testSessionData?.access_token
+          if (testSessionData?.encrypted_access_token) {
+            try {
+              test_access_token = await decryptData(testSessionData.encrypted_access_token)
+            } catch (error) {
+              console.warn('Failed to decrypt access token, using legacy token')
+            }
+          }
+
+          let test_api_key = testApiKeyData?.api_key
+          if (testApiKeyData?.encrypted_api_key) {
+            try {
+              test_api_key = await decryptData(testApiKeyData.encrypted_api_key)
+            } catch (error) {
+              console.warn('Failed to decrypt API key, using legacy key')
+            }
+          }
 
           console.log('Session data:', !!testSessionData?.access_token);
           console.log('API key data:', !!testApiKeyData?.api_key);
 
-          if (!testSessionData?.access_token || !testApiKeyData?.api_key) {
+          if (!test_access_token || !test_api_key) {
             return Response.json({
               status: "error",
               message: "Not authenticated. Please login first."
@@ -1002,7 +1287,7 @@ serve(async (req) => {
           const testOrderResponse = await fetch(`${KITE_API_BASE}/orders/regular`, {
             method: 'POST',
             headers: {
-              'Authorization': `token ${testApiKeyData.api_key}:${testSessionData.access_token}`,
+              'Authorization': `token ${test_api_key}:${test_access_token}`,
               'X-Kite-Version': '3',
               'Content-Type': 'application/x-www-form-urlencoded'
             },
