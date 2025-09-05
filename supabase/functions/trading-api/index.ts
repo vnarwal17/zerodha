@@ -361,44 +361,70 @@ serve(async (req) => {
           .eq('id', 1)
           .maybeSingle()
 
-        // Define comprehensive stock lists
-        const nifty50Stocks = ["RELIANCE", "TCS", "HDFCBANK", "INFY", "HINDUNILVR", "HDFC", "ICICIBANK", "KOTAKBANK", "BHARTIARTL", "ITC", "SBIN", "BAJFINANCE", "ASIANPAINT", "MARUTI", "HCLTECH", "AXISBANK", "LT", "DMART", "SUNPHARMA", "TITAN", "ULTRACEMCO", "NESTLEIND", "WIPRO", "NTPC", "JSWSTEEL", "TECHM", "TATAMOTORS", "INDUSINDBK", "POWERGRID", "BAJAJFINSV", "GRASIM", "ADANIENT", "COALINDIA", "HEROMOTOCO", "CIPLA", "EICHERMOT", "BRITANNIA", "DIVISLAB", "DRREDDY", "APOLLOHOSP", "TATACONSUM", "UPL", "BAJAJ-AUTO", "HINDALCO", "ONGC", "SBILIFE", "BPCL", "TATASTEEL", "HDFCLIFE", "ADANIPORTS"]
-        const bankniftyStocks = ["HDFCBANK", "ICICIBANK", "KOTAKBANK", "SBIN", "AXISBANK", "INDUSINDBK", "BAJFINANCE", "BAJAJFINSV", "PNB", "BANKBARODA", "AUBANK", "IDFCFIRSTB"]
-        
-        // Create instruments from the stock lists
-        const createInstrument = (symbol: string, baseToken: number) => ({
-          symbol: symbol,
-          instrument_token: baseToken,
-          exchange: "NSE",
-          name: symbol + " Ltd.",
-          is_nifty50: nifty50Stocks.includes(symbol),
-          is_banknifty: bankniftyStocks.includes(symbol)
-        })
+        if (!instrumentsSessionData?.access_token || !instrumentsApiKeyData?.api_key) {
+          return Response.json({
+            status: "error",
+            message: "Not authenticated. Please login to Zerodha first."
+          }, { headers: corsHeaders })
+        }
 
-        let instruments = []
+        try {
+          // Fetch real instruments from Zerodha API
+          const instrumentsResponse = await fetch(`${KITE_API_BASE}/instruments`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `token ${instrumentsApiKeyData.api_key}:${instrumentsSessionData.access_token}`,
+              'X-Kite-Version': '3'
+            }
+          })
 
-        // Always provide fallback data
-        let baseToken = 1000000
-        nifty50Stocks.forEach(symbol => {
-          instruments.push(createInstrument(symbol, baseToken++))
-        })
-        
-        bankniftyStocks.forEach(symbol => {
-          if (!nifty50Stocks.includes(symbol)) {
-            instruments.push(createInstrument(symbol, baseToken++))
+          if (!instrumentsResponse.ok) {
+            return Response.json({
+              status: "error",
+              message: "Failed to fetch instruments from Zerodha API"
+            }, { headers: corsHeaders })
           }
-        })
 
-        return Response.json({
-          status: "success",
-          message: "Instruments fetched successfully",
-          data: {
-            instruments: instruments,
-            nifty50_stocks: nifty50Stocks,
-            banknifty_stocks: bankniftyStocks,
-            count: instruments.length
+          const instrumentsText = await instrumentsResponse.text()
+          const lines = instrumentsText.split('\n')
+          const instruments = []
+          
+          // Parse CSV data - Include all NSE equity instruments
+          for (let i = 1; i < lines.length; i++) {
+            const cols = lines[i].split(',')
+            if (cols.length >= 8) {
+              const symbol = cols[2]?.replace(/"/g, '')
+              const exchange = cols[11]?.replace(/"/g, '')
+              const instrumentType = cols[9]?.replace(/"/g, '')
+              
+              // Include all NSE equity instruments (stocks)
+              if (exchange === 'NSE' && instrumentType === 'EQ' && symbol && symbol.length > 0) {
+                instruments.push({
+                  symbol: symbol,
+                  instrument_token: parseInt(cols[0]) || 0,
+                  exchange: exchange,
+                  name: cols[1]?.replace(/"/g, '') || symbol,
+                  is_nifty50: false, // Will be determined by actual data
+                  is_banknifty: false
+                })
+              }
+            }
           }
-        }, { headers: corsHeaders })
+
+          return Response.json({
+            status: "success",
+            message: "Instruments fetched successfully",
+            data: {
+              instruments: instruments,
+              count: instruments.length
+            }
+          }, { headers: corsHeaders })
+        } catch (error) {
+          return Response.json({
+            status: "error",
+            message: "Failed to fetch instruments: " + error.message
+          }, { headers: corsHeaders })
+        }
         break
 
       case '/start_live_trading':
@@ -497,106 +523,331 @@ serve(async (req) => {
         break
 
       case '/get_balance':
-        // Complete balance data matching Zerodha structure
-        const balance = {
-          equity: {
-            available: { 
-              cash: 100000,
-              opening_balance: 100000,
-              live_balance: 100000,
-              collateral: 0,
-              intraday_payin: 0
+        const { data: balanceSessionData } = await supabaseClient
+          .from('trading_sessions')
+          .select('access_token, user_id')
+          .eq('id', 1)
+          .maybeSingle()
+
+        const { data: balanceApiKeyData } = await supabaseClient
+          .from('trading_credentials')
+          .select('api_key')
+          .eq('id', 1)
+          .maybeSingle()
+
+        if (!balanceSessionData?.access_token || !balanceApiKeyData?.api_key) {
+          return Response.json({
+            status: "error",
+            message: "Not authenticated. Please login to Zerodha first."
+          }, { headers: corsHeaders })
+        }
+
+        try {
+          // Fetch real balance from Zerodha API
+          const fundsResponse = await fetch(`${KITE_API_BASE}/user/margins`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `token ${balanceApiKeyData.api_key}:${balanceSessionData.access_token}`,
+              'X-Kite-Version': '3'
+            }
+          })
+
+          if (!fundsResponse.ok) {
+            return Response.json({
+              status: "error",
+              message: "Failed to fetch balance from Zerodha API"
+            }, { headers: corsHeaders })
+          }
+
+          const balanceData = await fundsResponse.json()
+
+          return Response.json({
+            status: "success",
+            message: "Balance retrieved",
+            data: { 
+              balance: balanceData.data,
+              user_id: balanceSessionData.user_id
+            }
+          }, { headers: corsHeaders })
+        } catch (error) {
+          return Response.json({
+            status: "error",
+            message: "Failed to fetch balance: " + error.message
+          }, { headers: corsHeaders })
+        }
+        break
+
+      case '/get_historical_data':
+        const { symbol, instrument_token, interval = '3minute', days = 30 } = data
+        
+        const { data: histSessionData } = await supabaseClient
+          .from('trading_sessions')
+          .select('access_token')
+          .eq('id', 1)
+          .maybeSingle()
+
+        const { data: histApiKeyData } = await supabaseClient
+          .from('trading_credentials')
+          .select('api_key')
+          .eq('id', 1)
+          .maybeSingle()
+
+        if (!histSessionData?.access_token || !histApiKeyData?.api_key) {
+          return Response.json({
+            status: "error",
+            message: "Not authenticated. Please login to Zerodha first."
+          }, { headers: corsHeaders })
+        }
+
+        if (!instrument_token) {
+          return Response.json({
+            status: "error",
+            message: "Instrument token is required"
+          }, { headers: corsHeaders })
+        }
+
+        try {
+          const toDate = new Date()
+          const fromDate = new Date(toDate.getTime() - (days * 24 * 60 * 60 * 1000))
+          
+          const historicalResponse = await fetch(
+            `${KITE_API_BASE}/instruments/historical/${instrument_token}/${interval}?` +
+            `from=${fromDate.toISOString().split('T')[0]}&to=${toDate.toISOString().split('T')[0]}`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `token ${histApiKeyData.api_key}:${histSessionData.access_token}`,
+              'X-Kite-Version': '3'
+            }
+          })
+
+          if (!historicalResponse.ok) {
+            return Response.json({
+              status: "error",
+              message: "Failed to fetch historical data from Zerodha API"
+            }, { headers: corsHeaders })
+          }
+
+          const historicalData = await historicalResponse.json()
+          const candles = historicalData.data.candles.map((candle: any) => ({
+            timestamp: candle[0],
+            open: candle[1],
+            high: candle[2],
+            low: candle[3],
+            close: candle[4],
+            volume: candle[5]
+          }))
+
+          const signal = analyzeIntradayStrategy(candles)
+
+          return Response.json({
+            status: "success",
+            message: "Historical data retrieved",
+            data: {
+              symbol: symbol,
+              candles: candles,
+              signal: signal,
+              count: candles.length
+            }
+          }, { headers: corsHeaders })
+        } catch (error) {
+          return Response.json({
+            status: "error",
+            message: "Failed to fetch historical data: " + error.message
+          }, { headers: corsHeaders })
+        }
+        break
+
+      case '/execute_trade':
+        const { symbol: tradeSymbol, action, quantity, order_type = 'MARKET' } = data
+        
+        const { data: tradeSessionData } = await supabaseClient
+          .from('trading_sessions')
+          .select('access_token')
+          .eq('id', 1)
+          .maybeSingle()
+
+        const { data: tradeApiKeyData } = await supabaseClient
+          .from('trading_credentials')
+          .select('api_key')
+          .eq('id', 1)
+          .maybeSingle()
+
+        if (!tradeSessionData?.access_token || !tradeApiKeyData?.api_key) {
+          return Response.json({
+            status: "error",
+            message: "Not authenticated. Please login to Zerodha first."
+          }, { headers: corsHeaders })
+        }
+
+        if (!tradeSymbol || !action || !quantity) {
+          return Response.json({
+            status: "error",
+            message: "Symbol, action, and quantity are required"
+          }, { headers: corsHeaders })
+        }
+
+        try {
+          // Place real order via Zerodha API
+          const orderResponse = await fetch(`${KITE_API_BASE}/orders/regular`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `token ${tradeApiKeyData.api_key}:${tradeSessionData.access_token}`,
+              'X-Kite-Version': '3',
+              'Content-Type': 'application/x-www-form-urlencoded'
             },
-            utilised: { 
-              debits: 0,
-              exposure: 0,
-              m2m_realised: 0,
-              m2m_unrealised: 0,
-              option_premium: 0,
-              payout: 0,
-              span: 0,
-              holding_sales: 0,
-              turnover: 0
-            },
-            net: 100000
+            body: new URLSearchParams({
+              tradingsymbol: tradeSymbol,
+              exchange: 'NSE',
+              transaction_type: action,
+              quantity: quantity.toString(),
+              order_type: order_type,
+              product: 'MIS', // Intraday
+              validity: 'DAY'
+            })
+          })
+
+          if (!orderResponse.ok) {
+            const errorData = await orderResponse.json()
+            return Response.json({
+              status: "error",
+              message: errorData.message || "Failed to place order"
+            }, { headers: corsHeaders })
+          }
+
+          const orderData = await orderResponse.json()
+
+          return Response.json({
+            status: "success",
+            message: "Order placed successfully",
+            data: {
+              order_id: orderData.data.order_id,
+              symbol: tradeSymbol,
+              action: action,
+              quantity: quantity
+            }
+          }, { headers: corsHeaders })
+        } catch (error) {
+          return Response.json({
+            status: "error",
+            message: "Failed to execute trade: " + error.message
+          }, { headers: corsHeaders })
+        }
+        break
+
+      case '/analyze_symbols':
+        const { symbols: analyzeSymbols } = data
+        
+        if (!analyzeSymbols || !Array.isArray(analyzeSymbols)) {
+          return Response.json({
+            status: "error",
+            message: "Symbols array is required"
+          }, { headers: corsHeaders })
+        }
+
+        const signals = []
+        
+        for (const symbol of analyzeSymbols) {
+          try {
+            // Get historical data for each symbol and analyze
+            const histData = await fetch(`${req.url}`, {
+              method: 'POST',
+              headers: req.headers,
+              body: JSON.stringify({
+                path: '/get_historical_data',
+                symbol: symbol.symbol,
+                instrument_token: symbol.instrument_token
+              })
+            })
+            
+            if (histData.ok) {
+              const histResult = await histData.json()
+              if (histResult.status === 'success') {
+                signals.push(histResult.data.signal)
+              }
+            }
+          } catch (error) {
+            // Skip failed symbols
+            console.warn(`Failed to analyze ${symbol.symbol}:`, error)
           }
         }
 
         return Response.json({
           status: "success",
-          message: "Balance retrieved",
-          data: { balance, user_id: "mock_user" }
-        }, { headers: corsHeaders })
-        break
-
-      case '/get_historical_data':
-        // Mock historical data
-        const mockCandles = Array.from({ length: 50 }, (_, i) => ({
-          timestamp: new Date(Date.now() - (50 - i) * 60000).toISOString(),
-          open: 100 + Math.random() * 10,
-          high: 105 + Math.random() * 10,
-          low: 95 + Math.random() * 10,
-          close: 100 + Math.random() * 10,
-          volume: Math.floor(Math.random() * 10000)
-        }))
-
-        const signal = analyzeIntradayStrategy(mockCandles)
-
-        return Response.json({
-          status: "success",
-          message: "Historical data retrieved",
-          data: {
-            symbol: data.symbol || "MOCK",
-            candles: mockCandles,
-            signal: signal,
-            count: mockCandles.length
-          }
-        }, { headers: corsHeaders })
-        break
-
-      case '/execute_trade':
-        return Response.json({
-          status: "success",
-          message: "Trade executed (mock)",
-          data: {
-            order_id: "mock_order_" + Date.now(),
-            symbol: data.symbol || "MOCK",
-            action: data.action || "BUY",
-            quantity: data.quantity || 1
-          }
-        }, { headers: corsHeaders })
-        break
-
-      case '/analyze_symbols':
-        const mockSignals = (data.symbols || []).map((symbol: any) => ({
-          symbol: symbol.symbol,
-          action: 'HOLD' as const,
-          price: 100,
-          quantity: 0,
-          reason: 'Mock analysis'
-        }))
-
-        return Response.json({
-          status: "success",
           message: "Symbols analyzed",
           data: {
-            signals: mockSignals,
+            signals: signals,
             timestamp: new Date().toISOString(),
-            analyzed_count: mockSignals.length
+            analyzed_count: signals.length
           }
         }, { headers: corsHeaders })
         break
 
       case '/place_test_order':
-        return Response.json({
-          status: "success",
-          message: "Test order placed successfully",
-          data: {
-            order_id: "test_order_" + Date.now(),
-            symbol: "SBIN",
-            message: "Test order executed"
+        const { data: testSessionData } = await supabaseClient
+          .from('trading_sessions')
+          .select('access_token')
+          .eq('id', 1)
+          .maybeSingle()
+
+        const { data: testApiKeyData } = await supabaseClient
+          .from('trading_credentials')
+          .select('api_key')
+          .eq('id', 1)
+          .maybeSingle()
+
+        if (!testSessionData?.access_token || !testApiKeyData?.api_key) {
+          return Response.json({
+            status: "error",
+            message: "Not authenticated. Please login to Zerodha first."
+          }, { headers: corsHeaders })
+        }
+
+        try {
+          // Place a small test order
+          const testOrderResponse = await fetch(`${KITE_API_BASE}/orders/regular`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `token ${testApiKeyData.api_key}:${testSessionData.access_token}`,
+              'X-Kite-Version': '3',
+              'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: new URLSearchParams({
+              tradingsymbol: 'SBIN',
+              exchange: 'NSE',
+              transaction_type: 'BUY',
+              quantity: '1',
+              order_type: 'LIMIT',
+              price: '1', // Very low price to test API without actually executing
+              product: 'MIS',
+              validity: 'DAY'
+            })
+          })
+
+          if (!testOrderResponse.ok) {
+            const errorData = await testOrderResponse.json()
+            return Response.json({
+              status: "error",
+              message: "Test order failed: " + (errorData.message || "Unknown error")
+            }, { headers: corsHeaders })
           }
-        }, { headers: corsHeaders })
+
+          const testOrderData = await testOrderResponse.json()
+
+          return Response.json({
+            status: "success",
+            message: "Test order placed successfully",
+            data: {
+              order_id: testOrderData.data.order_id,
+              symbol: "SBIN",
+              message: "API connection verified"
+            }
+          }, { headers: corsHeaders })
+        } catch (error) {
+          return Response.json({
+            status: "error",
+            message: "Test order failed: " + error.message
+          }, { headers: corsHeaders })
+        }
         break
 
       case '/test_connection':
