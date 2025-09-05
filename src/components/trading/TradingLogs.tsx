@@ -2,20 +2,25 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
-import { FileText, Download, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { FileText, Download, RefreshCw, Activity, AlertCircle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { tradingApi } from "@/services/trading-api";
+import { useToast } from "@/hooks/use-toast";
 
-interface LogEntry {
+interface ActivityLog {
   id: string;
-  timestamp: string;
+  event_type: string;
+  event_name: string;
   symbol: string;
-  event: string;
   message: string;
-  type: "info" | "success" | "warning" | "error";
+  severity: "info" | "success" | "warning" | "error";
+  metadata: any;
+  created_at: string;
 }
 
 interface TradingLogsProps {
-  logs?: LogEntry[];
+  logs?: any[];
   onRefresh?: () => void;
   onExport?: () => void;
 }
@@ -26,9 +31,59 @@ export function TradingLogs({
   onExport 
 }: TradingLogsProps) {
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
+  const [selectedEventType, setSelectedEventType] = useState<string>("all");
+  const [isLoading, setIsLoading] = useState(false);
+  const { toast } = useToast();
 
-  const getStatusVariant = (type: LogEntry["type"]) => {
-    switch (type) {
+  const eventTypes = [
+    { value: "all", label: "All Events" },
+    { value: "CONNECTION", label: "Connection" },
+    { value: "TRADING", label: "Trading" },
+    { value: "ANALYSIS", label: "Analysis" },
+    { value: "ORDER", label: "Orders" },
+    { value: "POSITION", label: "Positions" },
+    { value: "SYSTEM", label: "System" },
+    { value: "ERROR", label: "Errors" }
+  ];
+
+  const fetchActivityLogs = async () => {
+    if (isLoading) return;
+    
+    setIsLoading(true);
+    try {
+      const response = await tradingApi.getActivityLogs(
+        100, 
+        selectedEventType === "all" ? undefined : selectedEventType
+      );
+      
+      if (response.status === 'success' && response.data) {
+        setActivityLogs(response.data.logs);
+      }
+    } catch (error) {
+      toast({
+        title: "Failed to fetch logs",
+        description: "Could not retrieve activity logs",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchActivityLogs();
+  }, [selectedEventType]);
+
+  useEffect(() => {
+    if (autoRefresh) {
+      const interval = setInterval(fetchActivityLogs, 5000); // Refresh every 5 seconds
+      return () => clearInterval(interval);
+    }
+  }, [autoRefresh, selectedEventType]);
+
+  const getStatusVariant = (severity: ActivityLog["severity"]) => {
+    switch (severity) {
       case "success": return "success";
       case "error": return "danger";
       case "warning": return "warning";
@@ -36,66 +91,151 @@ export function TradingLogs({
     }
   };
 
-  const getEventColor = (event: string) => {
-    if (event.includes("TRADE_EXECUTED")) return "text-success";
-    if (event.includes("ERROR") || event.includes("SL_HIT")) return "text-destructive";
-    if (event.includes("SETUP") || event.includes("REJECTION")) return "text-primary";
-    return "text-muted-foreground";
+  const getEventIcon = (eventType: string) => {
+    switch (eventType) {
+      case "CONNECTION": return "🔗";
+      case "TRADING": return "📈";
+      case "ANALYSIS": return "🔍";
+      case "ORDER": return "📋";
+      case "POSITION": return "💰";
+      case "SYSTEM": return "⚙️";
+      case "ERROR": return "❌";
+      default: return "📝";
+    }
   };
 
+  const formatTimestamp = (timestamp: string) => {
+    return new Date(timestamp).toLocaleTimeString('en-US', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  };
+
+  const displayLogs = activityLogs.length > 0 ? activityLogs : logs;
+
   return (
-    <Card className="h-[500px] flex flex-col">
+    <Card className="h-[600px] flex flex-col">
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center space-x-2">
-            <FileText className="h-5 w-5 text-primary" />
-            <span>Strategy Logs</span>
+            <Activity className="h-5 w-5 text-primary" />
+            <span>Activity Logs</span>
+            <span className="text-sm text-muted-foreground">
+              ({displayLogs.length} entries)
+            </span>
           </CardTitle>
           <div className="flex items-center space-x-2">
+            <Select value={selectedEventType} onValueChange={setSelectedEventType}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {eventTypes.map((type) => (
+                  <SelectItem key={type.value} value={type.value}>
+                    {type.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
             <Button
               variant="ghost"
               size="sm"
-              onClick={onRefresh}
-              disabled={autoRefresh}
+              onClick={() => {
+                setAutoRefresh(!autoRefresh);
+                if (!autoRefresh) fetchActivityLogs();
+              }}
             >
-              <RefreshCw className={`h-4 w-4 ${autoRefresh ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-4 w-4 ${(autoRefresh || isLoading) ? 'animate-spin' : ''}`} />
             </Button>
+            
             <Button variant="ghost" size="sm" onClick={onExport}>
               <Download className="h-4 w-4" />
             </Button>
           </div>
         </div>
+        
+        <div className="flex items-center space-x-4 text-sm text-muted-foreground">
+          <div className="flex items-center space-x-1">
+            <div className={`w-2 h-2 rounded-full ${autoRefresh ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+            <span>{autoRefresh ? 'Auto-refresh ON' : 'Auto-refresh OFF'}</span>
+          </div>
+          {isLoading && (
+            <div className="flex items-center space-x-1">
+              <AlertCircle className="h-3 w-3 animate-spin" />
+              <span>Loading...</span>
+            </div>
+          )}
+        </div>
       </CardHeader>
+      
       <CardContent className="flex-1 overflow-hidden">
         <ScrollArea className="h-full">
           <div className="space-y-2">
-            {logs.length === 0 ? (
+            {displayLogs.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                No logs available
+                <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No activity logs available</p>
+                <p className="text-sm">Start trading to see comprehensive activity logs</p>
               </div>
             ) : (
-              logs.map((log) => (
-                <div
-                  key={log.id}
-                  className="flex items-start space-x-3 p-3 rounded-lg border border-border hover:bg-accent/50 transition-colors"
-                >
-                  <div className="text-xs text-muted-foreground font-mono mt-1 min-w-[60px]">
-                    {log.timestamp}
-                  </div>
-                  
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <span className="font-medium text-sm">{log.symbol}</span>
-                      <StatusBadge variant={getStatusVariant(log.type)} size="sm">
-                        {log.event}
-                      </StatusBadge>
+              displayLogs.map((log) => {
+                // Handle both old format (from props) and new format (from API)
+                const isNewFormat = 'event_type' in log;
+                
+                return (
+                  <div
+                    key={log.id}
+                    className="flex items-start space-x-3 p-3 rounded-lg border border-border hover:bg-accent/50 transition-colors"
+                  >
+                    <div className="text-xs text-muted-foreground font-mono mt-1 min-w-[60px]">
+                      {isNewFormat 
+                        ? formatTimestamp(log.created_at)
+                        : log.timestamp
+                      }
                     </div>
-                    <div className="text-sm text-foreground">
-                      {log.message}
+                    
+                    <div className="text-lg mt-0.5">
+                      {isNewFormat 
+                        ? getEventIcon(log.event_type)
+                        : "📝"
+                      }
+                    </div>
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center space-x-2 mb-1">
+                        <span className="font-medium text-sm">
+                          {log.symbol || 'SYSTEM'}
+                        </span>
+                        <StatusBadge 
+                          variant={isNewFormat 
+                            ? getStatusVariant(log.severity) 
+                            : getStatusVariant(log.type)
+                          } 
+                          size="sm"
+                        >
+                          {isNewFormat ? log.event_name : log.event}
+                        </StatusBadge>
+                        {isNewFormat && (
+                          <span className="text-xs px-2 py-1 bg-muted rounded text-muted-foreground">
+                            {log.event_type}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm text-foreground">
+                        {log.message}
+                      </div>
+                      {isNewFormat && log.metadata && Object.keys(log.metadata).length > 0 && (
+                        <div className="text-xs text-muted-foreground mt-1 font-mono">
+                          {JSON.stringify(log.metadata, null, 2)}
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </ScrollArea>

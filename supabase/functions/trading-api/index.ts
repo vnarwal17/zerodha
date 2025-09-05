@@ -39,6 +39,33 @@ interface ApiResponse<T = any> {
   data?: T;
 }
 
+// Helper function to log activities to database
+async function logActivity(
+  supabaseClient: any,
+  eventType: string, 
+  eventName: string, 
+  message: string, 
+  symbol: string = 'SYSTEM', 
+  severity: string = 'info', 
+  metadata: any = {}
+) {
+  try {
+    await supabaseClient
+      .from('activity_logs')
+      .insert({
+        event_type: eventType,
+        event_name: eventName,
+        symbol: symbol,
+        message: message,
+        severity: severity,
+        metadata: metadata
+      });
+    console.log(`[${eventType}] ${eventName}: ${message}`);
+  } catch (error) {
+    console.error('Failed to log activity:', error);
+  }
+}
+
 // Your specific strategy implementation
 function calculateSMA50(prices: number[]): number {
   if (prices.length < 50) return 0;
@@ -271,9 +298,12 @@ serve(async (req) => {
 
     switch (path) {
       case '/set_credentials':
+        await logActivity(supabaseClient, 'SYSTEM', 'CREDENTIALS_UPDATE', 'API credentials being updated');
+        
         const { api_key, api_secret } = requestData
           
           if (!api_key || !api_secret) {
+            await logActivity(supabaseClient, 'SYSTEM', 'CREDENTIALS_ERROR', 'Missing API credentials', 'SYSTEM', 'error');
             return Response.json({
               status: "error",
               message: "Both API key and secret are required"
@@ -291,12 +321,15 @@ serve(async (req) => {
             })
 
           if (credentialsError) {
+            await logActivity(supabaseClient, 'SYSTEM', 'CREDENTIALS_ERROR', 'Failed to save credentials', 'SYSTEM', 'error');
             return Response.json({
               status: "error",
               message: credentialsError.message
             }, { headers: corsHeaders })
           }
 
+          await logActivity(supabaseClient, 'SYSTEM', 'CREDENTIALS_SAVED', 'Trading credentials saved successfully', 'SYSTEM', 'success');
+          
           return Response.json({
             status: "success",
             message: "Credentials updated successfully"
@@ -304,6 +337,8 @@ serve(async (req) => {
         break
 
       case '/login':
+        await logActivity(supabaseClient, 'CONNECTION', 'LOGIN_ATTEMPT', 'User attempting to connect to Zerodha');
+        
         const { request_token } = requestData
         
         if (request_token) {
@@ -546,6 +581,8 @@ serve(async (req) => {
 
       case '/start_live_trading':
         const { symbols } = requestData
+        
+        await logActivity(supabaseClient, 'TRADING', 'START_TRADING', `Starting live trading for ${symbols.length} symbols`, 'SYSTEM', 'success', { symbol_count: symbols.length, symbols: symbols.map((s: TradingSymbol) => s.symbol) });
           
           // Store trading session
           const { error: tradingError } = await supabaseClient
@@ -558,10 +595,16 @@ serve(async (req) => {
             })
 
           if (tradingError) {
+            await logActivity(supabaseClient, 'TRADING', 'START_ERROR', 'Failed to start live trading', 'SYSTEM', 'error');
             return Response.json({
               status: "error",
               message: tradingError.message
             }, { headers: corsHeaders })
+          }
+
+          // Log individual symbols being monitored
+          for (const symbol of symbols) {
+            await logActivity(supabaseClient, 'ANALYSIS', 'SYMBOL_MONITOR', `Now monitoring ${symbol.symbol} for trading signals`, symbol.symbol, 'info');
           }
 
           return Response.json({
@@ -572,6 +615,8 @@ serve(async (req) => {
         break
 
       case '/stop_live_trading':
+          await logActivity(supabaseClient, 'TRADING', 'STOP_TRADING', 'Stopping live trading', 'SYSTEM', 'warning');
+          
           const { error: stopError } = await supabaseClient
             .from('trading_sessions')
             .upsert({
@@ -581,11 +626,14 @@ serve(async (req) => {
             })
 
           if (stopError) {
+            await logActivity(supabaseClient, 'TRADING', 'STOP_ERROR', 'Failed to stop live trading', 'SYSTEM', 'error');
             return Response.json({
               status: "error",
               message: stopError.message
             }, { headers: corsHeaders })
           }
+
+          await logActivity(supabaseClient, 'TRADING', 'STOP_SUCCESS', 'Live trading stopped successfully', 'SYSTEM', 'success');
 
           return Response.json({
             status: "success",
@@ -594,11 +642,20 @@ serve(async (req) => {
         break
 
       case '/live_status':
+        await logActivity(supabaseClient, 'SYSTEM', 'STATUS_CHECK', 'Checking live trading status');
+        
         const { data: statusData } = await supabaseClient
           .from('trading_sessions')
           .select('*')
           .eq('id', 1)
           .maybeSingle()
+
+        // Get recent activity logs for live status
+        const { data: recentLogs } = await supabaseClient
+          .from('activity_logs')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(20);
 
           return Response.json({
             status: "success",
@@ -607,9 +664,13 @@ serve(async (req) => {
                 is_trading: statusData?.trading_active || false,
                 market_open: true,
                 active_positions: [],
-                logs: [
-                  { timestamp: new Date().toISOString(), message: "Trading system initialized" }
-                ]
+                strategy_logs: recentLogs?.map(log => ({
+                  timestamp: log.created_at,
+                  symbol: log.symbol,
+                  event: log.event_name,
+                  message: log.message,
+                  severity: log.severity
+                })) || []
               }
             }
           }, { headers: corsHeaders })
@@ -770,6 +831,8 @@ serve(async (req) => {
             }, { headers: corsHeaders })
           }
         } catch (error) {
+          await logActivity(supabaseClient, 'ORDER', 'ORDER_ERROR', `Error executing trade for ${trade_symbol}`, trade_symbol, 'error', { error: error.message });
+          
           return Response.json({
             status: "error",
             message: "Failed to fetch historical data from Zerodha API"
@@ -848,6 +911,13 @@ serve(async (req) => {
           const orderData = await orderResponse.json()
 
           if (orderResponse.ok && orderData.status === 'success') {
+            await logActivity(supabaseClient, 'ORDER', 'ORDER_PLACED', `${action} order placed successfully for ${trade_symbol}`, trade_symbol, 'success', {
+              order_id: orderData.data.order_id,
+              quantity: quantity,
+              action: action,
+              order_type: order_type
+            });
+            
             // Log the trade in database
             await supabaseClient
               .from('trade_logs')
@@ -872,6 +942,12 @@ serve(async (req) => {
               }
             }, { headers: corsHeaders })
           } else {
+            await logActivity(supabaseClient, 'ORDER', 'ORDER_FAILED', `Failed to place ${action} order for ${trade_symbol}`, trade_symbol, 'error', {
+              error_message: orderData.message,
+              action: action,
+              quantity: quantity
+            });
+            
             return Response.json({
               status: "error",
               message: orderData.message || "Failed to place order"
@@ -887,6 +963,8 @@ serve(async (req) => {
 
       case '/analyze_symbols':
         const { monitoring_symbols } = requestData
+        
+        await logActivity(supabaseClient, 'ANALYSIS', 'ANALYSIS_START', `Analyzing ${monitoring_symbols.length} symbols for trading signals`, 'SYSTEM', 'info', { symbol_count: monitoring_symbols.length });
         
         const { data: analyzeSessionData } = await supabaseClient
           .from('trading_sessions')
@@ -1058,6 +1136,47 @@ serve(async (req) => {
             status: "error",
             message: `Failed to execute test order: ${error.message}`
           }, { headers: corsHeaders })
+        }
+        break
+
+      case '/get_activity_logs':
+        await logActivity(supabaseClient, 'SYSTEM', 'LOGS_FETCH', 'Fetching activity logs');
+        
+        const { limit = 100, event_type = null } = requestData;
+        
+        try {
+          let query = supabaseClient
+            .from('activity_logs')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(limit);
+          
+          if (event_type) {
+            query = query.eq('event_type', event_type);
+          }
+          
+          const { data: logs, error: logsError } = await query;
+          
+          if (logsError) {
+            await logActivity(supabaseClient, 'SYSTEM', 'LOGS_ERROR', 'Failed to fetch activity logs', 'SYSTEM', 'error');
+            return Response.json({
+              status: "error",
+              message: logsError.message
+            }, { headers: corsHeaders });
+          }
+          
+          return Response.json({
+            status: "success",
+            data: {
+              logs: logs || [],
+              count: logs?.length || 0
+            }
+          }, { headers: corsHeaders });
+        } catch (error) {
+          return Response.json({
+            status: "error",
+            message: "Failed to fetch activity logs"
+          }, { headers: corsHeaders });
         }
         break
 

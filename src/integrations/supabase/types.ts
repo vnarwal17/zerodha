@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      activity_logs: {
+        Row: {
+          created_at: string | null
+          event_name: string
+          event_type: string
+          id: string
+          message: string
+          metadata: Json | null
+          session_id: number | null
+          severity: string | null
+          symbol: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          event_name: string
+          event_type: string
+          id?: string
+          message: string
+          metadata?: Json | null
+          session_id?: number | null
+          severity?: string | null
+          symbol?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          event_name?: string
+          event_type?: string
+          id?: string
+          message?: string
+          metadata?: Json | null
+          session_id?: number | null
+          severity?: string | null
+          symbol?: string | null
+        }
+        Relationships: []
+      }
       trade_logs: {
         Row: {
           action: string
@@ -58,6 +94,9 @@ export type Database = {
           api_key: string
           api_secret: string
           created_at: string
+          encrypted_api_key: string | null
+          encrypted_api_secret: string | null
+          encryption_version: number | null
           id: number
           updated_at: string
         }
@@ -65,6 +104,9 @@ export type Database = {
           api_key: string
           api_secret: string
           created_at?: string
+          encrypted_api_key?: string | null
+          encrypted_api_secret?: string | null
+          encryption_version?: number | null
           id?: number
           updated_at?: string
         }
@@ -72,6 +114,9 @@ export type Database = {
           api_key?: string
           api_secret?: string
           created_at?: string
+          encrypted_api_key?: string | null
+          encrypted_api_secret?: string | null
+          encryption_version?: number | null
           id?: number
           updated_at?: string
         }
@@ -141,39 +186,63 @@ export type Database = {
         Row: {
           access_token: string | null
           created_at: string
+          encrypted_access_token: string | null
+          encrypted_request_token: string | null
+          expires_at: string | null
           id: number
+          ip_address: string | null
+          last_activity: string | null
           login_time: string | null
           request_token: string | null
+          session_hash: string | null
           status: string | null
           symbols: Json | null
+          token_version: number | null
           trading_active: boolean | null
           updated_at: string
+          user_agent: string | null
           user_id: string | null
           user_name: string | null
         }
         Insert: {
           access_token?: string | null
           created_at?: string
+          encrypted_access_token?: string | null
+          encrypted_request_token?: string | null
+          expires_at?: string | null
           id?: number
+          ip_address?: string | null
+          last_activity?: string | null
           login_time?: string | null
           request_token?: string | null
+          session_hash?: string | null
           status?: string | null
           symbols?: Json | null
+          token_version?: number | null
           trading_active?: boolean | null
           updated_at?: string
+          user_agent?: string | null
           user_id?: string | null
           user_name?: string | null
         }
         Update: {
           access_token?: string | null
           created_at?: string
+          encrypted_access_token?: string | null
+          encrypted_request_token?: string | null
+          expires_at?: string | null
           id?: number
+          ip_address?: string | null
+          last_activity?: string | null
           login_time?: string | null
           request_token?: string | null
+          session_hash?: string | null
           status?: string | null
           symbols?: Json | null
+          token_version?: number | null
           trading_active?: boolean | null
           updated_at?: string
+          user_agent?: string | null
           user_id?: string | null
           user_name?: string | null
         }
@@ -205,7 +274,22 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      cleanup_expired_sessions: {
+        Args: Record<PropertyKey, never>
+        Returns: number
+      }
+      generate_session_hash: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      is_session_valid: {
+        Args: { session_id: number }
+        Returns: boolean
+      }
+      migrate_credentials_to_encrypted: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
