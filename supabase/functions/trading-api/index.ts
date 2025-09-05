@@ -157,8 +157,8 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
     };
   }
 
-  // Setup candle validation: 09:57:00 to 09:59:59 hrs
-  // This represents the 3-minute candle from 9:57-10:00 AM IST
+  // Setup candle validation: 09:57:00 to 09:59:59
+  // This represents the 3-minute candle from 9:57:00-9:59:59 AM IST
   const setupCandle = candles[Math.max(0, candles.length - 10)]; // Look at earlier candles for setup
   const sma50 = calculateSMA50(closes);
   
@@ -172,7 +172,7 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
     };
   }
 
-  // Check 09:57-09:59 setup validity
+  // Check 09:57:00-09:59:59 setup validity
   const setupResult = isValidSetupCandle(setupCandle, sma50);
   
   if (!setupResult.isValid) {
@@ -181,7 +181,7 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
       action: 'HOLD',
       price: 0,
       quantity: 0,
-      reason: 'Invalid 09:57-09:59 setup - candle touches SMA or straddles it'
+      reason: 'Invalid 09:57:00-09:59:59 setup - candle touches SMA or straddles it'
     };
   }
 

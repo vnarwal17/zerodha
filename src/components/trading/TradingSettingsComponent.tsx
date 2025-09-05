@@ -293,7 +293,7 @@ export function TradingSettingsComponent({ isConnected }: TradingSettingsProps) 
             </div>
             <div>
               <div className="text-muted-foreground">Setup Time</div>
-              <div className="font-medium">09:57-09:59 hrs</div>
+              <div className="font-medium">09:57:00-09:59:59</div>
             </div>
           </div>
         </div>
