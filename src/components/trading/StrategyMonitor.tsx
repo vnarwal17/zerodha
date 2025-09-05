@@ -18,7 +18,7 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [signals, setSignals] = useState<StrategySignal[]>([]);
   const [lastUpdate, setLastUpdate] = useState<string>('');
-  const [autoExecute, setAutoExecute] = useState(false);
+  const [autoExecute, setAutoExecute] = useState(true);
 
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
@@ -81,18 +81,20 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
     }
   };
 
-  const startMonitoring = () => {
+  const startTrading = () => {
     if (!isLiveTrading) {
       toast.error('Please start live trading first');
       return;
     }
     setIsMonitoring(true);
-    toast.success('Strategy monitoring started');
+    setAutoExecute(true);
+    toast.success('Live trading started with auto-execution');
   };
 
-  const stopMonitoring = () => {
+  const stopTrading = () => {
     setIsMonitoring(false);
-    toast.info('Strategy monitoring stopped');
+    setAutoExecute(false);
+    toast.info('Live trading stopped');
   };
 
   const getSignalIcon = (action: string) => {
@@ -129,41 +131,28 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center gap-4">
-          <div className="flex gap-2">
-            {!isMonitoring ? (
-              <Button 
-                onClick={startMonitoring}
-                disabled={selectedSymbols.length === 0}
-                className="flex items-center gap-2"
-              >
-                <Play className="h-4 w-4" />
-                Start Monitoring
-              </Button>
-            ) : (
-              <Button 
-                onClick={stopMonitoring}
-                variant="destructive"
-                className="flex items-center gap-2"
-              >
-                <Square className="h-4 w-4" />
-                Stop Monitoring
-              </Button>
-            )}
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="autoExecute"
-              checked={autoExecute}
-              onChange={(e) => setAutoExecute(e.target.checked)}
-              className="rounded"
-            />
-            <label htmlFor="autoExecute" className="text-sm">
-              Auto-execute trades
-            </label>
-          </div>
+        <div className="flex items-center justify-center">
+          {!isMonitoring ? (
+            <Button 
+              onClick={startTrading}
+              disabled={selectedSymbols.length === 0}
+              className="flex items-center gap-2"
+              size="lg"
+            >
+              <Play className="h-4 w-4" />
+              Start Trading
+            </Button>
+          ) : (
+            <Button 
+              onClick={stopTrading}
+              variant="destructive"
+              className="flex items-center gap-2"
+              size="lg"
+            >
+              <Square className="h-4 w-4" />
+              Stop Trading
+            </Button>
+          )}
         </div>
 
         {lastUpdate && (
@@ -177,7 +166,7 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
           
           {signals.length === 0 ? (
             <div className="text-center py-4 text-muted-foreground">
-              {isMonitoring ? 'Analyzing symbols...' : 'Start monitoring to see signals'}
+              {isMonitoring ? 'Analyzing symbols...' : 'Start trading to see signals'}
             </div>
           ) : (
             <div className="grid gap-2">
@@ -204,7 +193,7 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
                       <Button
                         size="sm"
                         onClick={() => executeSignal(signal)}
-                        disabled={!isLiveTrading || autoExecute}
+                        disabled={!isLiveTrading}
                       >
                         Execute
                       </Button>
