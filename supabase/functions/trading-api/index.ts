@@ -541,8 +541,8 @@ serve(async (req) => {
             message: "Instruments fetched successfully",
             data: {
               instruments: instruments,
-              nifty50_stocks: ['RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'HINDUNILVR'],
-              banknifty_stocks: ['HDFCBANK', 'ICICIBANK', 'KOTAKBANK', 'SBIN'],
+              nifty50_stocks: [],
+              banknifty_stocks: [],
               count: instruments.length
             }
           }, { headers: corsHeaders })
