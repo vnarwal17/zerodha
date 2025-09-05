@@ -21,6 +21,10 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
   const [autoExecute, setAutoExecute] = useState(true);
 
   useEffect(() => {
+    handleMonitoringEffect();
+  }, [isLiveTrading, selectedSymbols]);
+
+  useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
 
     if (isMonitoring && selectedSymbols.length > 0) {
@@ -81,20 +85,15 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
     }
   };
 
-  const startTrading = () => {
-    if (!isLiveTrading) {
-      toast.error('Please start live trading first');
-      return;
+  const handleMonitoringEffect = () => {
+    // Strategy Monitor now automatically follows live trading status
+    if (isLiveTrading && selectedSymbols.length > 0) {
+      setIsMonitoring(true);
+      setAutoExecute(true);
+    } else {
+      setIsMonitoring(false);
+      setAutoExecute(false);
     }
-    setIsMonitoring(true);
-    setAutoExecute(true);
-    toast.success('Live trading started with auto-execution');
-  };
-
-  const stopTrading = () => {
-    setIsMonitoring(false);
-    setAutoExecute(false);
-    toast.info('Live trading stopped');
   };
 
   const getSignalIcon = (action: string) => {
@@ -131,27 +130,20 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center justify-center">
-          {!isMonitoring ? (
-            <Button 
-              onClick={startTrading}
-              disabled={selectedSymbols.length === 0}
-              className="flex items-center gap-2"
-              size="lg"
-            >
+        <div className="text-center space-y-2">
+          <div className="text-sm text-muted-foreground">
+            Strategy monitoring follows live trading status
+          </div>
+          {isLiveTrading ? (
+            <div className="flex items-center justify-center gap-2 text-green-600">
               <Play className="h-4 w-4" />
-              Start Trading
-            </Button>
+              <span className="font-medium">Active</span>
+            </div>
           ) : (
-            <Button 
-              onClick={stopTrading}
-              variant="destructive"
-              className="flex items-center gap-2"
-              size="lg"
-            >
+            <div className="flex items-center justify-center gap-2 text-muted-foreground">
               <Square className="h-4 w-4" />
-              Stop Trading
-            </Button>
+              <span>Inactive - Use header button to start trading</span>
+            </div>
           )}
         </div>
 
@@ -166,7 +158,7 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
           
           {signals.length === 0 ? (
             <div className="text-center py-4 text-muted-foreground">
-              {isMonitoring ? 'Analyzing symbols...' : 'Start trading to see signals'}
+              {isLiveTrading ? 'Analyzing symbols...' : 'Start trading from header to see signals'}
             </div>
           ) : (
             <div className="grid gap-2">
