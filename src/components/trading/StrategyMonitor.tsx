@@ -43,6 +43,70 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
     };
   }, [isLiveTrading, selectedSymbols]);
 
+  // CRITICAL VALIDATION: Final signal validation before execution
+  const validateSignalBeforeExecution = (signal: StrategySignal): boolean => {
+    // Check signal validity
+    if (!signal || !signal.symbol || !signal.action || !signal.price || !signal.quantity) {
+      console.warn('Invalid signal: Missing required fields', signal);
+      return false;
+    }
+
+    // Check action validity
+    if (signal.action !== 'BUY' && signal.action !== 'SELL') {
+      console.warn('Invalid signal: Invalid action', signal.action);
+      return false;
+    }
+
+    // Check price validity
+    if (isNaN(signal.price) || signal.price <= 0) {
+      console.warn('Invalid signal: Invalid price', signal.price);
+      return false;
+    }
+
+    // Check quantity validity
+    if (isNaN(signal.quantity) || signal.quantity <= 0 || !Number.isInteger(signal.quantity)) {
+      console.warn('Invalid signal: Invalid quantity', signal.quantity);
+      return false;
+    }
+
+    // Check if signal has proper reasoning (ensures strategy validation occurred)
+    if (!signal.reason || signal.reason.length < 10) {
+      console.warn('Invalid signal: Missing or insufficient reason', signal.reason);
+      return false;
+    }
+
+    // Additional check for entry triggered signals
+    if (signal.reason.includes('entry triggered')) {
+      const reasonPattern = /(LONG|SHORT) entry triggered\. Entry: ([\d.]+), SL: ([\d.]+), Target: ([\d.]+)/;
+      const match = signal.reason.match(reasonPattern);
+      
+      if (!match) {
+        console.warn('Invalid signal: Entry trigger format invalid', signal.reason);
+        return false;
+      }
+
+      const [, direction, entry, sl, target] = match;
+      const entryPrice = parseFloat(entry);
+      const stopLoss = parseFloat(sl);
+      const targetPrice = parseFloat(target);
+
+      // Validate price relationships
+      if (direction === 'LONG') {
+        if (entryPrice <= stopLoss || targetPrice <= entryPrice) {
+          console.warn('Invalid LONG signal: Wrong price relationships', { entryPrice, stopLoss, targetPrice });
+          return false;
+        }
+      } else if (direction === 'SHORT') {
+        if (entryPrice >= stopLoss || targetPrice >= entryPrice) {
+          console.warn('Invalid SHORT signal: Wrong price relationships', { entryPrice, stopLoss, targetPrice });
+          return false;
+        }
+      }
+    }
+
+    return true;
+  };
+
   const analyzeSymbols = async () => {
     try {
       const response = await tradingApi.analyzeSymbols(selectedSymbols);
@@ -55,8 +119,13 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
         if (isLiveTrading) {
           for (const signal of response.data.signals) {
             if (signal.action === 'BUY' || signal.action === 'SELL') {
-              await executeSignal(signal);
-              toast.success(`🚀 Live order executed: ${signal.action} ${signal.symbol} @ ${signal.price}`);
+              // CRITICAL VALIDATION: Final check before order execution
+              if (validateSignalBeforeExecution(signal)) {
+                await executeSignal(signal);
+                toast.success(`🚀 Live order executed: ${signal.action} ${signal.symbol} @ ₹${signal.price}`);
+              } else {
+                toast.error(`❌ Order rejected: Invalid signal for ${signal.symbol}`);
+              }
             }
           }
         }

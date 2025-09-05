@@ -116,6 +116,7 @@ function isValidRejectionCandle(candle: CandleData, sma50: number, bias: 'LONG' 
 }
 
 function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
+  // CRITICAL VALIDATION: Ensure minimum candles for proper analysis
   if (candles.length < 50) {
     return {
       symbol: '',
@@ -133,9 +134,9 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
   const istTime = new Date(currentTime.getTime() + (5.5 * 60 * 60 * 1000)); // Add 5.5 hours for IST
   const currentHour = istTime.getHours();
   const currentMinute = istTime.getMinutes();
+  const currentSecond = istTime.getSeconds();
   
-  // Only trade between 9:15 AM and 3:00 PM IST (market hours)
-  // Entry window: 10:00 AM to 1:00 PM IST (after setup validation)
+  // STRICT VALIDATION: Only trade during market hours
   if (currentHour < 9 || (currentHour === 9 && currentMinute < 15) || currentHour >= 15) {
     return {
       symbol: '',
@@ -146,70 +147,84 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
     };
   }
   
-  // Entry window restriction: 10:00 AM to 1:00 PM IST (after setup time)
+  // STRICT VALIDATION: Entry window restriction after setup validation
   if (currentHour < 10 || currentHour >= 13) {
     return {
       symbol: '',
       action: 'HOLD',
       price: 0,
       quantity: 0,
-      reason: 'Outside entry window (10:00 AM - 1:00 PM IST)'
+      reason: 'Outside entry window (10:00 AM - 1:00 PM IST) - setup time required'
     };
   }
 
-  // Setup candle validation: 09:57:00 to 09:59:59
-  // This represents the 3-minute candle from 9:57:00-9:59:59 AM IST
-  const setupCandle = candles[Math.max(0, candles.length - 10)]; // Look at earlier candles for setup
+  // CRITICAL VALIDATION: Calculate SMA50 with error checking
   const sma50 = calculateSMA50(closes);
-  
-  if (sma50 === 0) {
+  if (sma50 === 0 || isNaN(sma50) || !isFinite(sma50)) {
     return {
       symbol: '',
       action: 'HOLD',
       price: 0,
       quantity: 0,
-      reason: 'SMA50 calculation failed'
+      reason: 'SMA50 calculation failed or invalid'
     };
   }
 
-  // Check 09:57:00-09:59:59 setup validity
+  // CRITICAL VALIDATION: Setup candle from 09:57:00-09:59:59 period
+  // Must be found in historical data, not current candles
+  const setupCandle = candles[Math.max(0, candles.length - 15)]; // Look further back for setup
+  if (!setupCandle) {
+    return {
+      symbol: '',
+      action: 'HOLD',
+      price: 0,
+      quantity: 0,
+      reason: 'Setup candle not found in historical data'
+    };
+  }
+
+  // STRICT VALIDATION: Setup candle must be completely above/below SMA
   const setupResult = isValidSetupCandle(setupCandle, sma50);
-  
-  if (!setupResult.isValid) {
+  if (!setupResult.isValid || setupResult.bias === 'INVALID') {
     return {
       symbol: '',
       action: 'HOLD',
       price: 0,
       quantity: 0,
-      reason: 'Invalid 09:57:00-09:59:59 setup - candle touches SMA or straddles it'
+      reason: 'Invalid 09:57:00-09:59:59 setup - candle must be completely above/below SMA'
     };
   }
 
-  // Look for rejection candle after setup
+  // CRITICAL VALIDATION: Look for valid rejection candle
   let rejectionCandle: CandleData | null = null;
   let rejectionIndex = -1;
+  let dayInvalidated = false;
   
-  // Search for rejection candle in subsequent candles
-  for (let i = Math.max(0, candles.length - 10) + 1; i < candles.length; i++) {
+  // Search for rejection candle in subsequent candles with strict validation
+  for (let i = Math.max(0, candles.length - 15) + 1; i < candles.length; i++) {
     const candidate = candles[i];
     
-    // Check if any candle fully crosses SMA (invalidates day)
-    if ((candidate.low <= sma50 && candidate.high >= sma50) && 
-        !isValidRejectionCandle(candidate, sma50, setupResult.bias)) {
-      return {
-        symbol: '',
-        action: 'HOLD',
-        price: 0,
-        quantity: 0,
-        reason: 'Day invalidated - candle crossed SMA without valid rejection'
-      };
+    // STRICT CHECK: If any candle crosses SMA without valid rejection, invalidate day
+    if ((candidate.low <= sma50 && candidate.high >= sma50)) {
+      if (!isValidRejectionCandle(candidate, sma50, setupResult.bias)) {
+        dayInvalidated = true;
+        break;
+      } else if (!rejectionCandle) {
+        // First valid rejection candle found
+        rejectionCandle = candidate;
+        rejectionIndex = i;
+      }
     }
-    
-    if (isValidRejectionCandle(candidate, sma50, setupResult.bias)) {
-      rejectionCandle = candidate;
-      rejectionIndex = i;
-      break;
-    }
+  }
+  
+  if (dayInvalidated) {
+    return {
+      symbol: '',
+      action: 'HOLD',
+      price: 0,
+      quantity: 0,
+      reason: 'Day invalidated - candle crossed SMA without valid rejection'
+    };
   }
   
   if (!rejectionCandle) {
@@ -222,7 +237,7 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
     };
   }
 
-  // Check if we're past the 2-candle skip period
+  // STRICT VALIDATION: Must wait 2 candles after rejection
   const candlesAfterRejection = candles.length - 1 - rejectionIndex;
   if (candlesAfterRejection < 2) {
     return {
@@ -230,12 +245,25 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
       action: 'HOLD',
       price: 0,
       quantity: 0,
-      reason: 'In 2-candle skip period after rejection'
+      reason: 'In mandatory 2-candle skip period after rejection'
     };
   }
 
-  // Calculate entry and stop loss based on rejection candle
-  const currentPrice = candles[candles.length - 1].close;
+  // CRITICAL VALIDATION: Ensure current price data is valid
+  const currentCandle = candles[candles.length - 1];
+  const currentPrice = currentCandle.close;
+  
+  if (!currentPrice || isNaN(currentPrice) || currentPrice <= 0) {
+    return {
+      symbol: '',
+      action: 'HOLD',
+      price: 0,
+      quantity: 0,
+      reason: 'Invalid current price data'
+    };
+  }
+
+  // FINAL VALIDATION: Check that all price calculations are valid before entry
   
   if (setupResult.bias === 'LONG') {
     const entryPrice = rejectionCandle.high + 0.10;
@@ -243,8 +271,32 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
     const risk = entryPrice - stopLoss;
     const target = entryPrice + (risk * 5); // 5:1 RR
     
-    // Check if current price triggers entry
-    if (currentPrice >= entryPrice) {
+    // CRITICAL VALIDATION: Ensure all price calculations are valid
+    if (isNaN(entryPrice) || isNaN(stopLoss) || isNaN(risk) || isNaN(target) || 
+        entryPrice <= 0 || stopLoss <= 0 || risk <= 0 || target <= 0 || 
+        risk < 0.50) { // Minimum risk of 50 paisa
+      return {
+        symbol: '',
+        action: 'HOLD',
+        price: 0,
+        quantity: 0,
+        reason: 'Invalid LONG price calculations - risk too small or negative values'
+      };
+    }
+    
+    // ADDITIONAL VALIDATION: Ensure logical price relationships
+    if (entryPrice <= stopLoss || target <= entryPrice) {
+      return {
+        symbol: '',
+        action: 'HOLD',
+        price: 0,
+        quantity: 0,
+        reason: 'Invalid LONG price logic - entry must be above SL, target above entry'
+      };
+    }
+    
+    // FINAL CHECK: Current price must clearly break above entry with conviction
+    if (currentPrice >= entryPrice && (currentPrice - entryPrice) >= 0.05) {
       return {
         symbol: '',
         action: 'BUY',
@@ -267,8 +319,32 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
     const risk = stopLoss - entryPrice;
     const target = entryPrice - (risk * 5); // 5:1 RR
     
-    // Check if current price triggers entry
-    if (currentPrice <= entryPrice) {
+    // CRITICAL VALIDATION: Ensure all price calculations are valid
+    if (isNaN(entryPrice) || isNaN(stopLoss) || isNaN(risk) || isNaN(target) || 
+        entryPrice <= 0 || stopLoss <= 0 || risk <= 0 || target <= 0 || 
+        risk < 0.50) { // Minimum risk of 50 paisa
+      return {
+        symbol: '',
+        action: 'HOLD',
+        price: 0,
+        quantity: 0,
+        reason: 'Invalid SHORT price calculations - risk too small or negative values'
+      };
+    }
+    
+    // ADDITIONAL VALIDATION: Ensure logical price relationships
+    if (entryPrice >= stopLoss || target >= entryPrice) {
+      return {
+        symbol: '',
+        action: 'HOLD',
+        price: 0,
+        quantity: 0,
+        reason: 'Invalid SHORT price logic - entry must be below SL, target below entry'
+      };
+    }
+    
+    // FINAL CHECK: Current price must clearly break below entry with conviction
+    if (currentPrice <= entryPrice && (entryPrice - currentPrice) >= 0.05) {
       return {
         symbol: '',
         action: 'SELL',
@@ -857,6 +933,100 @@ serve(async (req) => {
       case '/execute_trade':
         const { trade_symbol, action, quantity, order_type = 'MARKET', entry_price, stop_loss, take_profit } = requestData
         
+        // CRITICAL VALIDATION: Verify all required parameters before proceeding
+        if (!trade_symbol || !action || !quantity) {
+          return Response.json({
+            status: "error",
+            message: "Missing required parameters: trade_symbol, action, and quantity are mandatory"
+          }, { headers: corsHeaders })
+        }
+        
+        // STRICT VALIDATION: Ensure action is valid
+        if (action !== 'BUY' && action !== 'SELL') {
+          return Response.json({
+            status: "error",
+            message: "Invalid action. Must be 'BUY' or 'SELL'"
+          }, { headers: corsHeaders })
+        }
+        
+        // STRICT VALIDATION: Ensure quantity is positive integer
+        if (isNaN(quantity) || quantity <= 0 || !Number.isInteger(Number(quantity))) {
+          return Response.json({
+            status: "error",
+            message: "Invalid quantity. Must be a positive integer"
+          }, { headers: corsHeaders })
+        }
+        
+        // STRICT VALIDATION: Validate price parameters if provided
+        if (entry_price !== undefined && (isNaN(entry_price) || entry_price <= 0)) {
+          return Response.json({
+            status: "error",
+            message: "Invalid entry_price. Must be a positive number"
+          }, { headers: corsHeaders })
+        }
+        
+        if (stop_loss !== undefined && (isNaN(stop_loss) || stop_loss <= 0)) {
+          return Response.json({
+            status: "error",
+            message: "Invalid stop_loss. Must be a positive number"
+          }, { headers: corsHeaders })
+        }
+        
+        if (take_profit !== undefined && (isNaN(take_profit) || take_profit <= 0)) {
+          return Response.json({
+            status: "error",
+            message: "Invalid take_profit. Must be a positive number"
+          }, { headers: corsHeaders })
+        }
+        
+        // LOGICAL VALIDATION: Check price relationships for BUY orders
+        if (action === 'BUY' && entry_price && stop_loss && entry_price <= stop_loss) {
+          return Response.json({
+            status: "error",
+            message: "Invalid BUY order: Entry price must be higher than stop loss"
+          }, { headers: corsHeaders })
+        }
+        
+        // LOGICAL VALIDATION: Check price relationships for SELL orders
+        if (action === 'SELL' && entry_price && stop_loss && entry_price >= stop_loss) {
+          return Response.json({
+            status: "error",
+            message: "Invalid SELL order: Entry price must be lower than stop loss"
+          }, { headers: corsHeaders })
+        }
+        
+        // CRITICAL VALIDATION: Check for existing open positions to prevent duplicate orders
+        const { data: existingPositions } = await supabaseClient
+          .from('activity_logs')
+          .select('*')
+          .eq('symbol', trade_symbol)
+          .eq('event_type', 'ORDER')
+          .eq('event_name', 'ORDER_PLACED')
+          .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()) // Last 24 hours
+          .order('created_at', { ascending: false })
+          .limit(5)
+
+        if (existingPositions && existingPositions.length > 0) {
+          // Check if there's a recent order in the last 10 minutes to prevent spam
+          const recentOrder = existingPositions.find(pos => {
+            const orderTime = new Date(pos.created_at);
+            const timeDiff = Date.now() - orderTime.getTime();
+            return timeDiff < 10 * 60 * 1000; // 10 minutes
+          });
+          
+          if (recentOrder) {
+            await logActivity(supabaseClient, 'ORDER', 'ORDER_REJECTED', 
+              `Duplicate order prevented - recent order exists for ${trade_symbol}`, 
+              trade_symbol, 'warning'
+            );
+            
+            return Response.json({
+              status: "error",
+              message: `Order rejected: Recent order exists for ${trade_symbol}. Wait 10 minutes between orders.`
+            }, { headers: corsHeaders })
+          }
+        }
+
         const { data: tradeSessionData } = await supabaseClient
           .from('trading_sessions')
           .select('access_token')
