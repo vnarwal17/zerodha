@@ -187,17 +187,33 @@ class TradingApiService {
     });
   }
 
-  async executeTrade(symbol: string, action: 'BUY' | 'SELL', quantity: number, orderType: string = 'MARKET'): Promise<ApiResponse<{
+  async executeTrade(
+    symbol: string, 
+    action: 'BUY' | 'SELL', 
+    quantity: number, 
+    orderType: string = 'MARKET',
+    entryPrice?: number,
+    stopLoss?: number,
+    takeProfit?: number
+  ): Promise<ApiResponse<{
     order_id: string;
+    sl_order_id?: string;
+    tp_order_id?: string;
     symbol: string;
     action: string;
     quantity: number;
+    entry_price?: number;
+    stop_loss?: number;
+    take_profit?: number;
   }>> {
     return this.callEdgeFunction('/execute_trade', { 
       trade_symbol: symbol, 
       action, 
       quantity, 
-      order_type: orderType 
+      order_type: orderType,
+      entry_price: entryPrice,
+      stop_loss: stopLoss,
+      take_profit: takeProfit
     });
   }
 

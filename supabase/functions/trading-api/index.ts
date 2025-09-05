@@ -841,7 +841,7 @@ serve(async (req) => {
         break
 
       case '/execute_trade':
-        const { trade_symbol, action, quantity, order_type = 'MARKET' } = requestData
+        const { trade_symbol, action, quantity, order_type = 'MARKET', entry_price, stop_loss, take_profit } = requestData
         
         const { data: tradeSessionData } = await supabaseClient
           .from('trading_sessions')
@@ -870,6 +870,22 @@ serve(async (req) => {
         }
 
         try {
+          // Get current market price for proper order execution
+          const ltpResponse = await fetch(`${KITE_API_BASE}/quote/ltp?i=NSE:${trade_symbol}`, {
+            headers: {
+              'Authorization': `token ${tradeApiKeyData.api_key}:${tradeSessionData.access_token}`,
+              'X-Kite-Version': '3'
+            }
+          })
+
+          const ltpData = await ltpResponse.json()
+          if (!ltpResponse.ok || !ltpData.data || !ltpData.data[`NSE:${trade_symbol}`]) {
+            throw new Error('Failed to get current market price')
+          }
+
+          const currentPrice = ltpData.data[`NSE:${trade_symbol}`].last_price
+          const useEntryPrice = entry_price || currentPrice
+
           // Default settings if none are saved
           const settings = settingsData?.settings || {
             product: 'MIS',
@@ -878,7 +894,7 @@ serve(async (req) => {
             tag: 'ALGO_TRADE'
           };
 
-          // Build order parameters according to Zerodha API spec
+          // Build main order parameters according to Zerodha API spec
           const orderParams = new URLSearchParams({
             tradingsymbol: trade_symbol,
             exchange: 'NSE',
@@ -891,12 +907,17 @@ serve(async (req) => {
             tag: settings.tag || 'ALGO_TRADE'
           });
 
+          // Add price for limit orders
+          if (order_type === 'LIMIT') {
+            orderParams.append('price', useEntryPrice.toString());
+          }
+
           // Add optional parameters if they exist
           if (settings.disclosed_quantity && settings.disclosed_quantity > 0) {
             orderParams.append('disclosed_quantity', settings.disclosed_quantity.toString());
           }
 
-          console.log('Placing order with params:', Object.fromEntries(orderParams));
+          console.log('Placing main order with params:', Object.fromEntries(orderParams));
 
           const orderResponse = await fetch(`${KITE_API_BASE}/orders/regular`, {
             method: 'POST',
@@ -911,12 +932,118 @@ serve(async (req) => {
           const orderData = await orderResponse.json()
 
           if (orderResponse.ok && orderData.status === 'success') {
-            await logActivity(supabaseClient, 'ORDER', 'ORDER_PLACED', `${action} order placed successfully for ${trade_symbol}`, trade_symbol, 'success', {
-              order_id: orderData.data.order_id,
-              quantity: quantity,
-              action: action,
-              order_type: order_type
-            });
+            const mainOrderId = orderData.data.order_id
+            let stopLossOrderId = null
+            let takeProfitOrderId = null
+
+            // Place Stop Loss order if provided
+            if (stop_loss) {
+              try {
+                const slParams = new URLSearchParams({
+                  tradingsymbol: trade_symbol,
+                  exchange: 'NSE',
+                  transaction_type: action === 'BUY' ? 'SELL' : 'BUY', // Opposite direction
+                  order_type: 'SL',
+                  quantity: quantity.toString(),
+                  price: stop_loss.toString(),
+                  trigger_price: stop_loss.toString(),
+                  product: settings.product,
+                  validity: settings.validity,
+                  tag: settings.tag || 'ALGO_SL'
+                });
+
+                const slResponse = await fetch(`${KITE_API_BASE}/orders/regular`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `token ${tradeApiKeyData.api_key}:${tradeSessionData.access_token}`,
+                    'X-Kite-Version': '3',
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                  },
+                  body: slParams
+                })
+
+                const slData = await slResponse.json()
+                if (slResponse.ok && slData.status === 'success') {
+                  stopLossOrderId = slData.data.order_id
+                  await logActivity(supabaseClient, 'ORDER', 'SL_ORDER_PLACED', 
+                    `Stop Loss order placed at ₹${stop_loss}`, 
+                    trade_symbol, 'info', 
+                    { parent_order_id: mainOrderId, sl_order_id: stopLossOrderId, trigger_price: stop_loss }
+                  );
+                } else {
+                  await logActivity(supabaseClient, 'ORDER', 'SL_ORDER_ERROR', 
+                    `Stop Loss order failed: ${slData.message}`, 
+                    trade_symbol, 'warning'
+                  );
+                }
+              } catch (slError) {
+                await logActivity(supabaseClient, 'ORDER', 'SL_ORDER_ERROR', 
+                  `Stop Loss order failed: ${slError.message}`, 
+                  trade_symbol, 'warning'
+                );
+              }
+            }
+
+            // Place Take Profit order if provided
+            if (take_profit) {
+              try {
+                const tpParams = new URLSearchParams({
+                  tradingsymbol: trade_symbol,
+                  exchange: 'NSE',
+                  transaction_type: action === 'BUY' ? 'SELL' : 'BUY', // Opposite direction
+                  order_type: 'LIMIT',
+                  quantity: quantity.toString(),
+                  price: take_profit.toString(),
+                  product: settings.product,
+                  validity: settings.validity,
+                  tag: settings.tag || 'ALGO_TP'
+                });
+
+                const tpResponse = await fetch(`${KITE_API_BASE}/orders/regular`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `token ${tradeApiKeyData.api_key}:${tradeSessionData.access_token}`,
+                    'X-Kite-Version': '3',
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                  },
+                  body: tpParams
+                })
+
+                const tpData = await tpResponse.json()
+                if (tpResponse.ok && tpData.status === 'success') {
+                  takeProfitOrderId = tpData.data.order_id
+                  await logActivity(supabaseClient, 'ORDER', 'TP_ORDER_PLACED', 
+                    `Take Profit order placed at ₹${take_profit}`, 
+                    trade_symbol, 'info', 
+                    { parent_order_id: mainOrderId, tp_order_id: takeProfitOrderId, target_price: take_profit }
+                  );
+                } else {
+                  await logActivity(supabaseClient, 'ORDER', 'TP_ORDER_ERROR', 
+                    `Take Profit order failed: ${tpData.message}`, 
+                    trade_symbol, 'warning'
+                  );
+                }
+              } catch (tpError) {
+                await logActivity(supabaseClient, 'ORDER', 'TP_ORDER_ERROR', 
+                  `Take Profit order failed: ${tpError.message}`, 
+                  trade_symbol, 'warning'
+                );
+              }
+            }
+
+            await logActivity(supabaseClient, 'ORDER', 'ORDER_PLACED', 
+              `${action} order placed with automatic SL/TP for ${trade_symbol}`, 
+              trade_symbol, 'success', {
+                main_order_id: mainOrderId,
+                sl_order_id: stopLossOrderId,
+                tp_order_id: takeProfitOrderId,
+                entry_price: useEntryPrice,
+                stop_loss,
+                take_profit,
+                quantity: quantity,
+                action: action,
+                order_type: order_type
+              });
             
             // Log the trade in database
             await supabaseClient
@@ -925,7 +1052,8 @@ serve(async (req) => {
                 symbol: trade_symbol,
                 action: action,
                 quantity: quantity,
-                order_id: orderData.data.order_id,
+                price: useEntryPrice,
+                order_id: mainOrderId,
                 order_type: order_type,
                 status: 'PLACED',
                 timestamp: new Date().toISOString()
@@ -933,12 +1061,17 @@ serve(async (req) => {
 
             return Response.json({
               status: "success",
-              message: `${action} order placed successfully`,
+              message: `${action} order placed with automatic SL/TP`,
               data: {
-                order_id: orderData.data.order_id,
+                order_id: mainOrderId,
+                sl_order_id: stopLossOrderId,
+                tp_order_id: takeProfitOrderId,
                 symbol: trade_symbol,
                 action: action,
-                quantity: quantity
+                quantity: quantity,
+                entry_price: useEntryPrice,
+                stop_loss,
+                take_profit
               }
             }, { headers: corsHeaders })
           } else {
@@ -954,9 +1087,14 @@ serve(async (req) => {
             }, { headers: corsHeaders })
           }
         } catch (error) {
+          await logActivity(supabaseClient, 'ORDER', 'ORDER_ERROR', 
+            `Order execution failed: ${error.message}`, 
+            trade_symbol, 'error'
+          );
+          
           return Response.json({
             status: "error",
-            message: "Failed to execute trade"
+            message: `Failed to execute trade: ${error.message}`
           }, { headers: corsHeaders })
         }
         break

@@ -71,14 +71,35 @@ export const StrategyMonitor: React.FC<StrategyMonitorProps> = ({
     if (signal.action === 'HOLD') return;
     
     try {
+      // Calculate stop loss and take profit based on strategy
+      const entryPrice = signal.price;
+      let stopLoss: number;
+      let takeProfit: number;
+
+      if (signal.action === 'BUY') {
+        // For long positions: SL below entry, TP above entry
+        stopLoss = entryPrice * 0.98; // 2% stop loss
+        takeProfit = entryPrice * 1.10; // 10% take profit (5:1 RR)
+      } else {
+        // For short positions: SL above entry, TP below entry  
+        stopLoss = entryPrice * 1.02; // 2% stop loss
+        takeProfit = entryPrice * 0.90; // 10% take profit (5:1 RR)
+      }
+
       const response = await tradingApi.executeTrade(
         signal.symbol, 
         signal.action as 'BUY' | 'SELL', 
-        signal.quantity
+        signal.quantity,
+        'MARKET',
+        entryPrice,
+        stopLoss,
+        takeProfit
       );
 
       if (response.status === 'success') {
-        toast.success(`${signal.action} order placed for ${signal.symbol}`);
+        toast.success(
+          `🚀 ${signal.action} order placed for ${signal.symbol} with SL: ₹${stopLoss.toFixed(2)}, TP: ₹${takeProfit.toFixed(2)}`
+        );
       } else {
         toast.error(`Failed to place ${signal.action} order for ${signal.symbol}`);
       }
