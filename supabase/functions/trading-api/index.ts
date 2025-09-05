@@ -515,20 +515,41 @@ serve(async (req) => {
           const lines = instrumentsText.split('\n')
           const instruments = []
           
-          // Parse CSV data (skip header)
-          for (let i = 1; i < lines.length && instruments.length < 100; i++) {
+          // Define Nifty50 and BankNifty stocks
+          const nifty50Symbols = [
+            'RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'HINDUNILVR', 'HDFC', 'ICICIBANK', 'KOTAKBANK',
+            'BHARTIARTL', 'ITC', 'SBIN', 'LICI', 'LT', 'HCLTECH', 'AXISBANK', 'ASIANPAINT',
+            'MARUTI', 'SUNPHARMA', 'TITAN', 'ULTRACEMCO', 'WIPRO', 'NESTLEIND', 'POWERGRID',
+            'BAJFINANCE', 'NTPC', 'TECHM', 'TATACONSUM', 'INDUSINDBK', 'TATAMOTORS', 'COAL',
+            'ONGC', 'JSWSTEEL', 'GRASIM', 'HINDALCO', 'ADANIENT', 'TATASTEEL', 'CIPLA',
+            'HDFCLIFE', 'BAJAJFINSV', 'DRREDDY', 'EICHERMOT', 'APOLLOHOSP', 'BRITANNIA',
+            'DIVISLAB', 'HEROMOTOCO', 'SBILIFE', 'BPCL', 'ADANIPORTS', 'TATAPOWER'
+          ]
+          
+          const bankNiftySymbols = [
+            'HDFCBANK', 'ICICIBANK', 'AXISBANK', 'KOTAKBANK', 'SBIN', 'INDUSINDBK',
+            'PNB', 'BANKBARODA', 'AUBANK', 'IDFCFIRSTB', 'FEDERALBNK', 'BANDHANBNK'
+          ]
+          
+          // Parse CSV data (skip header) - get all NSE EQ instruments
+          for (let i = 1; i < lines.length; i++) {
             const fields = lines[i].split(',')
-            if (fields.length >= 3 && fields[2] === 'NSE') {
+            if (fields.length >= 11 && fields[2] === 'NSE' && fields[9] === 'EQ') {
+              const symbol = fields[3]
               instruments.push({
+                symbol: symbol,
+                name: fields[4] || symbol,
+                token: parseInt(fields[0]),
+                exchange: fields[2],
+                is_nifty50: nifty50Symbols.includes(symbol),
+                is_banknifty: bankNiftySymbols.includes(symbol),
                 instrument_token: parseInt(fields[0]),
                 exchange_token: fields[1],
-                exchange: fields[2],
                 tradingsymbol: fields[3],
-                name: fields[4],
                 expiry: fields[5],
                 strike: fields[6],
-                tick_size: fields[7],
-                lot_size: fields[8],
+                tick_size: parseFloat(fields[7]),
+                lot_size: parseInt(fields[8]),
                 instrument_type: fields[9],
                 segment: fields[10]
               })
@@ -541,8 +562,8 @@ serve(async (req) => {
             message: "Instruments fetched successfully",
             data: {
               instruments: instruments,
-              nifty50_stocks: [],
-              banknifty_stocks: [],
+              nifty50_stocks: nifty50Symbols,
+              banknifty_stocks: bankNiftySymbols,
               count: instruments.length
             }
           }, { headers: corsHeaders })
