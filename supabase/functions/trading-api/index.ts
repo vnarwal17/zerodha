@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { crypto } from "https://deno.land/std@0.192.0/crypto/mod.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -98,7 +97,7 @@ async function getEncryptionKey(): Promise<CryptoKey | null> {
     }
     
     const keyBytes = new TextEncoder().encode(keyData.padEnd(32, '0').substring(0, 32))
-    return await crypto.subtle.importKey(
+    return await globalThis.crypto.subtle.importKey(
       'raw',
       keyBytes,
       { name: 'AES-GCM' },
@@ -119,10 +118,10 @@ async function encryptData(data: string): Promise<string> {
       return data // Fallback to plain text
     }
     
-    const iv = crypto.getRandomValues(new Uint8Array(12))
+    const iv = globalThis.crypto.getRandomValues(new Uint8Array(12))
     const encodedData = new TextEncoder().encode(data)
     
-    const encrypted = await crypto.subtle.encrypt(
+    const encrypted = await globalThis.crypto.subtle.encrypt(
       { name: 'AES-GCM', iv },
       key,
       encodedData
@@ -154,7 +153,7 @@ async function decryptData(encryptedData: string): Promise<string> {
       const iv = combined.slice(0, 12)
       const data = combined.slice(12)
       
-      const decrypted = await crypto.subtle.decrypt(
+      const decrypted = await globalThis.crypto.subtle.decrypt(
         { name: 'AES-GCM', iv },
         key,
         data
@@ -174,7 +173,7 @@ async function decryptData(encryptedData: string): Promise<string> {
 
 // ============= SESSION SECURITY UTILITIES =============
 async function generateSessionHash(): Promise<string> {
-  const bytes = crypto.getRandomValues(new Uint8Array(32))
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(32))
   return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
@@ -466,7 +465,7 @@ serve(async (req) => {
           const checksum_string = credentialsData.api_key + request_token + credentialsData.api_secret
           const encoder = new TextEncoder()
           const data = encoder.encode(checksum_string)
-          const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+          const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', data)
           const hashArray = Array.from(new Uint8Array(hashBuffer))
           const checksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
 
