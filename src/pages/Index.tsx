@@ -23,6 +23,28 @@ const Index = () => {
   const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
 
+  // Check trading status on component mount
+  useEffect(() => {
+    const checkInitialStatus = async () => {
+      try {
+        const response = await tradingApi.getLiveStatus();
+        if (response.status === 'success' && response.data) {
+          const liveStatus = response.data.live_status;
+          setLiveStatus(liveStatus);
+          
+          // Update trading state based on backend status
+          if (liveStatus && liveStatus.is_trading) {
+            setIsTrading(true);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch initial status:', error);
+      }
+    };
+
+    checkInitialStatus();
+  }, []);
+
   // Real-time status updates
   useEffect(() => {
     if (isTrading) {

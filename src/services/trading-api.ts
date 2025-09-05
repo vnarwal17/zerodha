@@ -17,6 +17,7 @@ export interface ApiResponse<T> {
 }
 
 export interface LiveStatus {
+  is_trading?: boolean;
   market_open: boolean;
   active_positions: number;
   total_positions: number;
