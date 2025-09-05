@@ -485,7 +485,11 @@ serve(async (req) => {
             .eq('id', 1)
             .maybeSingle()
 
+          console.log("Session access_token available:", !!sessionData?.access_token)
+          console.log("API key available:", !!apiKeyData?.api_key)
+
           if (!sessionData?.access_token || !apiKeyData?.api_key) {
+            await logActivity(supabaseClient, 'error', 'Not authenticated - missing session or API key')
             return Response.json({
               status: "error",
               message: "Not authenticated. Please login to Zerodha first."
