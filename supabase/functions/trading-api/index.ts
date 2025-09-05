@@ -155,7 +155,23 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
       quantity: 0,
       reason: 'No valid setup candle found'
     };
+}
+
+// ============= LOGGING UTILITIES =============
+async function logActivity(supabaseClient: any, level: string, message: string, symbol?: string) {
+  try {
+    await supabaseClient
+      .from('trading_logs')
+      .insert({
+        level: level,
+        message: message,
+        symbol: symbol || null,
+        created_at: new Date().toISOString()
+      })
+  } catch (error) {
+    console.error('Failed to log activity:', error)
   }
+}
 
   // Look for rejection candle in subsequent candles
   for (let i = setupCandleIndex + 1; i < candles.length; i++) {
@@ -227,6 +243,7 @@ serve(async (req) => {
           })
 
         if (error) {
+          await logActivity(supabaseClient, 'error', `Failed to save credentials: ${error.message}`)
           console.error('Database error:', error)
           return Response.json({
             status: "error",
@@ -234,6 +251,7 @@ serve(async (req) => {
           }, { headers: corsHeaders })
         }
 
+        await logActivity(supabaseClient, 'info', 'Zerodha API credentials saved successfully')
         return Response.json({
           status: "success",
           message: "Credentials saved successfully"
@@ -251,11 +269,14 @@ serve(async (req) => {
             .maybeSingle()
 
           if (!credentialsData) {
+            await logActivity(supabaseClient, 'error', 'Login failed: API credentials not found')
             return Response.json({
               status: "error",
               message: "API credentials not found. Please set up credentials first."
             }, { headers: corsHeaders })
           }
+
+          await logActivity(supabaseClient, 'info', 'Starting Zerodha authentication process')
 
           // Calculate checksum: SHA-256 of api_key + request_token + api_secret
           const checksum_string = credentialsData.api_key + request_token + credentialsData.api_secret
@@ -298,12 +319,14 @@ serve(async (req) => {
                 })
 
               if (sessionError) {
+                await logActivity(supabaseClient, 'error', `Failed to save session: ${sessionError.message}`)
                 return Response.json({
                   status: "error",
                   message: sessionError.message
                 }, { headers: corsHeaders })
               }
 
+              await logActivity(supabaseClient, 'success', `Successfully logged in to Zerodha as ${tokenData.data.user_name}`)
               return Response.json({
                 status: "success",
                 message: "Login successful",
@@ -313,12 +336,14 @@ serve(async (req) => {
                 }
               }, { headers: corsHeaders })
             } else {
+              await logActivity(supabaseClient, 'error', `Zerodha authentication failed: ${tokenData.message || "Unknown error"}`)
               return Response.json({
                 status: "error",
                 message: tokenData.message || "Authentication failed"
               }, { headers: corsHeaders })
             }
           } catch (error) {
+            await logActivity(supabaseClient, 'error', `Authentication API call failed: ${error.message}`)
             return Response.json({
               status: "error",
               message: "Failed to authenticate with Zerodha API"
@@ -362,11 +387,14 @@ serve(async (req) => {
           .maybeSingle()
 
         if (!instrumentsSessionData?.access_token || !instrumentsApiKeyData?.api_key) {
+          await logActivity(supabaseClient, 'error', 'Failed to fetch instruments: Not authenticated')
           return Response.json({
             status: "error",
             message: "Not authenticated. Please login to Zerodha first."
           }, { headers: corsHeaders })
         }
+
+        await logActivity(supabaseClient, 'info', 'Fetching instruments from Zerodha API')
 
         try {
           // Fetch real instruments from Zerodha API
@@ -411,6 +439,7 @@ serve(async (req) => {
             }
           }
 
+          await logActivity(supabaseClient, 'success', `Successfully fetched ${instruments.length} instruments from Zerodha`)
           return Response.json({
             status: "success",
             message: "Instruments fetched successfully",
@@ -420,6 +449,7 @@ serve(async (req) => {
             }
           }, { headers: corsHeaders })
         } catch (error) {
+          await logActivity(supabaseClient, 'error', `Failed to fetch instruments: ${error.message}`)
           return Response.json({
             status: "error",
             message: "Failed to fetch instruments: " + error.message
@@ -446,6 +476,8 @@ serve(async (req) => {
           }, { headers: corsHeaders })
         }
 
+        const symbolNames = symbols.map((s: any) => s.symbol).join(', ')
+        await logActivity(supabaseClient, 'success', `Live trading started for symbols: ${symbolNames}`)
         return Response.json({
           status: "success",
           message: "Live trading started",
@@ -454,6 +486,7 @@ serve(async (req) => {
         break
 
       case '/stop_live_trading':
+        await logActivity(supabaseClient, 'info', 'Stopping live trading')
         const { error: stopError } = await supabaseClient
           .from('trading_sessions')
           .update({
@@ -463,12 +496,14 @@ serve(async (req) => {
           .eq('id', 1)
 
         if (stopError) {
+          await logActivity(supabaseClient, 'error', `Failed to stop live trading: ${stopError.message}`)
           return Response.json({
             status: "error",
             message: stopError.message
           }, { headers: corsHeaders })
         }
 
+        await logActivity(supabaseClient, 'success', 'Live trading stopped successfully')
         return Response.json({
           status: "success",
           message: "Live trading stopped"
@@ -561,6 +596,7 @@ serve(async (req) => {
 
           const balanceData = await fundsResponse.json()
 
+          await logActivity(supabaseClient, 'success', `Balance retrieved successfully for user: ${balanceSessionData.user_id}`)
           return Response.json({
             status: "success",
             message: "Balance retrieved",
@@ -570,6 +606,7 @@ serve(async (req) => {
             }
           }, { headers: corsHeaders })
         } catch (error) {
+          await logActivity(supabaseClient, 'error', `Failed to fetch balance: ${error.message}`)
           return Response.json({
             status: "error",
             message: "Failed to fetch balance: " + error.message
@@ -716,6 +753,7 @@ serve(async (req) => {
 
           const orderData = await orderResponse.json()
 
+          await logActivity(supabaseClient, 'success', `Order placed: ${action} ${quantity} ${tradeSymbol} - Order ID: ${orderData.data.order_id}`, tradeSymbol)
           return Response.json({
             status: "success",
             message: "Order placed successfully",
@@ -727,6 +765,7 @@ serve(async (req) => {
             }
           }, { headers: corsHeaders })
         } catch (error) {
+          await logActivity(supabaseClient, 'error', `Failed to execute trade for ${tradeSymbol}: ${error.message}`, tradeSymbol)
           return Response.json({
             status: "error",
             message: "Failed to execute trade: " + error.message
@@ -821,6 +860,7 @@ serve(async (req) => {
           }
 
           // API connection successful
+          await logActivity(supabaseClient, 'success', 'API connection test successful - Zerodha API is working correctly')
           return Response.json({
             status: "success",
             message: "API connection test successful",
@@ -831,6 +871,7 @@ serve(async (req) => {
             }
           }, { headers: corsHeaders })
         } catch (error) {
+          await logActivity(supabaseClient, 'error', `API connection test failed: ${error.message}`)
           return Response.json({
             status: "error",
             message: "API connection test failed: " + error.message
