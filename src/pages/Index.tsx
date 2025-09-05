@@ -288,7 +288,7 @@ const Index = () => {
           </TabsContent>
 
           <TabsContent value="performance" className="space-y-6">
-            <PerformanceMetrics />
+            <PerformanceMetrics isConnected={isConnected} isTrading={isTrading} />
           </TabsContent>
 
           <TabsContent value="logs" className="space-y-6">

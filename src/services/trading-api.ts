@@ -225,6 +225,20 @@ class TradingApiService {
     return this.callEdgeFunction('/analyze_symbols', { monitoring_symbols: symbols });
   }
 
+  // Performance Data
+  async getPerformanceData(): Promise<ApiResponse<{
+    totalPnL: number;
+    totalTrades: number;
+    winRate: number;
+    avgWin: number;
+    avgLoss: number;
+    maxDrawdown: number;
+    sharpeRatio: number;
+    todayPnL: number;
+  }>> {
+    return this.callEdgeFunction('/get_performance_data');
+  }
+
   // Export
   async getActivityLogs(limit: number = 100, eventType?: string): Promise<ApiResponse<{ logs: any[]; count: number }>> {
     return this.callEdgeFunction('/get_activity_logs', { limit, event_type: eventType });

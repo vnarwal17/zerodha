@@ -1,6 +1,9 @@
+import { useState, useEffect } from "react";
 import { MetricCard } from "@/components/ui/metric-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { TrendingUp, TrendingDown, Target, DollarSign, Percent, BarChart3 } from "lucide-react";
+import { TrendingUp, TrendingDown, Target, DollarSign, Percent, BarChart3, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { tradingApi } from "@/services/trading-api";
 
 interface PerformanceData {
   totalPnL: number;
@@ -14,10 +17,43 @@ interface PerformanceData {
 }
 
 interface PerformanceMetricsProps {
-  data?: PerformanceData;
+  isConnected: boolean;
+  isTrading?: boolean;
 }
 
-export function PerformanceMetrics({ data }: PerformanceMetricsProps) {
+export function PerformanceMetrics({ isConnected, isTrading }: PerformanceMetricsProps) {
+  const [data, setData] = useState<PerformanceData | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (isConnected) {
+      fetchPerformanceData();
+      
+      // Auto-refresh every 30 seconds when trading
+      if (isTrading) {
+        const interval = setInterval(fetchPerformanceData, 30000);
+        return () => clearInterval(interval);
+      }
+    } else {
+      setData(null);
+    }
+  }, [isConnected, isTrading]);
+
+  const fetchPerformanceData = async () => {
+    if (!isConnected) return;
+    
+    setLoading(true);
+    try {
+      const response = await tradingApi.getPerformanceData();
+      if (response.status === 'success' && response.data) {
+        setData(response.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch performance data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
   const formatCurrency = (amount: number) => {
     const sign = amount >= 0 ? '+' : '';
     return `${sign}₹${Math.abs(amount).toLocaleString('en-IN')}`;
@@ -116,10 +152,35 @@ export function PerformanceMetrics({ data }: PerformanceMetricsProps) {
           </div>
         </>
       ) : (
-        <div className="text-center py-12 text-muted-foreground">
-          <BarChart3 className="h-12 w-12 mx-auto mb-4 opacity-50" />
-          <p>No performance data available</p>
-          <p className="text-sm">Connect to Zerodha and start trading to see metrics</p>
+        <div className="text-center py-12">
+          {isConnected ? (
+            <div className="space-y-4">
+              <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
+              <div>
+                <p className="text-muted-foreground">
+                  {loading ? "Loading performance data..." : "No trading activity yet"}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Start trading to see your performance metrics
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={fetchPerformanceData}
+                disabled={loading}
+                className="mt-4"
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                {loading ? 'Loading...' : 'Refresh Data'}
+              </Button>
+            </div>
+          ) : (
+            <div className="text-muted-foreground">
+              <BarChart3 className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>No performance data available</p>
+              <p className="text-sm">Connect to Zerodha and start trading to see metrics</p>
+            </div>
+          )}
         </div>
       )}
     </div>
