@@ -399,6 +399,7 @@ serve(async (req) => {
             count: instruments.length
           }
         }, { headers: corsHeaders })
+        break
 
       case '/start_live_trading':
         const { symbols } = data
@@ -424,6 +425,7 @@ serve(async (req) => {
           message: "Live trading started",
           data: { symbols: symbols.map((s: any) => s.symbol) }
         }, { headers: corsHeaders })
+        break
 
       case '/stop_live_trading':
         const { error: stopError } = await supabaseClient
@@ -445,6 +447,7 @@ serve(async (req) => {
           status: "success",
           message: "Live trading stopped"
         }, { headers: corsHeaders })
+        break
 
       case '/get_live_status':
         const { data: liveSessionData } = await supabaseClient
@@ -467,6 +470,7 @@ serve(async (req) => {
           message: "Live status retrieved",
           data: { live_status }
         }, { headers: corsHeaders })
+        break
 
       case '/update_settings':
         const { settings } = data
@@ -490,6 +494,7 @@ serve(async (req) => {
           status: "success",
           message: "Settings updated successfully"
         }, { headers: corsHeaders })
+        break
 
       case '/get_balance':
         // Mock balance data
@@ -505,6 +510,7 @@ serve(async (req) => {
           message: "Balance retrieved",
           data: { balance, user_id: "mock_user" }
         }, { headers: corsHeaders })
+        break
 
       case '/get_historical_data':
         // Mock historical data
@@ -529,6 +535,7 @@ serve(async (req) => {
             count: mockCandles.length
           }
         }, { headers: corsHeaders })
+        break
 
       case '/execute_trade':
         return Response.json({
@@ -541,6 +548,7 @@ serve(async (req) => {
             quantity: data.quantity || 1
           }
         }, { headers: corsHeaders })
+        break
 
       case '/analyze_symbols':
         const mockSignals = (data.symbols || []).map((symbol: any) => ({
@@ -560,6 +568,7 @@ serve(async (req) => {
             analyzed_count: mockSignals.length
           }
         }, { headers: corsHeaders })
+        break
 
       case '/place_test_order':
         return Response.json({
@@ -571,6 +580,7 @@ serve(async (req) => {
             message: "Test order executed"
           }
         }, { headers: corsHeaders })
+        break
 
       case '/test_connection':
         const { data: sessionData } = await supabaseClient
