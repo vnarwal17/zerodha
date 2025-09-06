@@ -250,9 +250,26 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
                   <CheckCircle className="h-3 w-3 mr-1" />
                   Connected
                 </StatusBadge>
-                <Button variant="outline" size="sm" onClick={checkConnection}>
-                  Refresh
-                </Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={checkConnection}>
+                    Refresh
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => {
+                      onConnectionChange(false);
+                      setUserInfo(null);
+                      setCredentialsSet(false);
+                      toast({
+                        title: "Connection Reset",
+                        description: "You can now setup new credentials for today's session",
+                      });
+                    }}
+                  >
+                    Reset
+                  </Button>
+                </div>
               </div>
               
               {userInfo && (
