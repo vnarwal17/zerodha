@@ -11,8 +11,11 @@ import { TradingLogs } from "@/components/trading/TradingLogs";
 import { PerformanceMetrics } from "@/components/trading/PerformanceMetrics";
 import { StrategyMonitor } from "@/components/trading/StrategyMonitor";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { LogOut } from "lucide-react";
 import { tradingApi, TradingSymbol, LiveStatus } from "@/services/trading-api";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 
 const Index = () => {
   const [isConnected, setIsConnected] = useState(false);
@@ -22,6 +25,7 @@ const Index = () => {
   const [liveStatus, setLiveStatus] = useState<LiveStatus | null>(null);
   const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
+  const { logout, user } = useAuth();
 
   // Check trading status on component mount
   useEffect(() => {
@@ -215,14 +219,28 @@ const Index = () => {
     }
   };
 
+  const handleLogout = () => {
+    logout();
+    toast({
+      title: "Logged Out",
+      description: "You have been successfully logged out.",
+    });
+  };
+
   return (
     <div className="min-h-screen bg-background">
-      <TradingHeader
-        isConnected={isConnected}
-        isTrading={isTrading}
-        onToggleTrading={handleToggleTrading}
-        userName={userInfo?.user_name || userInfo?.user_id || "Trader"}
-      />
+      <div className="flex justify-between items-center p-4 border-b">
+        <TradingHeader
+          isConnected={isConnected}
+          isTrading={isTrading}
+          onToggleTrading={handleToggleTrading}
+          userName={user || "Trader"}
+        />
+        <Button variant="outline" size="sm" onClick={handleLogout} className="ml-4">
+          <LogOut className="h-4 w-4 mr-2" />
+          Logout
+        </Button>
+      </div>
 
       <main className="container mx-auto px-6 py-6 space-y-6">
         <Tabs defaultValue="setup" className="space-y-6">
