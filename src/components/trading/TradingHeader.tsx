@@ -1,20 +1,22 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Activity, Settings, Power, PowerOff } from "lucide-react";
+import { Activity, Settings, Power, PowerOff, LogOut } from "lucide-react";
 
 interface TradingHeaderProps {
   isConnected: boolean;
   isTrading: boolean;
   onToggleTrading: () => void;
   userName?: string;
+  onLogout?: () => void;
 }
 
 export function TradingHeader({ 
   isConnected, 
   isTrading, 
   onToggleTrading,
-  userName = "Demo User"
+  userName = "Demo User",
+  onLogout
 }: TradingHeaderProps) {
   return (
     <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-40">
@@ -62,6 +64,18 @@ export function TradingHeader({
           <Button variant="ghost" size="sm">
             <Settings className="h-4 w-4" />
           </Button>
+          
+          {onLogout && (
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={onLogout}
+              className="text-destructive hover:text-destructive"
+            >
+              <LogOut className="h-4 w-4 mr-2" />
+              Logout
+            </Button>
+          )}
         </div>
       </div>
     </header>

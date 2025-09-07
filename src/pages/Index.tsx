@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import { TradingHeader } from "@/components/trading/TradingHeader";
 import { BrokerConnection } from "@/components/trading/BrokerConnection";
 import { BalanceDisplay } from "@/components/trading/BalanceDisplay";
@@ -15,6 +16,7 @@ import { tradingApi, TradingSymbol, LiveStatus } from "@/services/trading-api";
 import { useToast } from "@/hooks/use-toast";
 
 const Index = () => {
+  const { logout } = useAuth();
   const [isConnected, setIsConnected] = useState(false);
   const [isTrading, setIsTrading] = useState(false);
   const [userInfo, setUserInfo] = useState<any>(null);
@@ -221,7 +223,8 @@ const Index = () => {
         isConnected={isConnected}
         isTrading={isTrading}
         onToggleTrading={handleToggleTrading}
-        userName={userInfo?.user_name || userInfo?.user_id || "Trader"}
+        userName={userInfo?.user_name || userInfo?.user_id || "Sridhar"}
+        onLogout={logout}
       />
 
       <main className="container mx-auto px-6 py-6 space-y-6">
