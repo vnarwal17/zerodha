@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
 
@@ -13,8 +13,8 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-  const navigate = useNavigate();
   const { toast } = useToast();
+  const { login } = useAuth();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,16 +29,15 @@ const Login = () => {
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     if (username === validUsername && password === validPassword) {
-      // Store authentication state
-      localStorage.setItem("isAuthenticated", "true");
-      localStorage.setItem("authenticatedUser", username);
+      // Use the auth context login function
+      login(username);
       
       toast({
         title: "Login Successful",
         description: `Welcome back, ${username}!`,
       });
       
-      navigate("/");
+      // Navigation will happen automatically via the ProtectedRoute
     } else {
       setError("Invalid username or password");
       toast({
