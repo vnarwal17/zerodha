@@ -25,10 +25,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const login = (username: string) => {
+    console.log("Login called with username:", username);
     localStorage.setItem("isAuthenticated", "true");
     localStorage.setItem("authenticatedUser", username);
     setIsAuthenticated(true);
     setUser(username);
+    console.log("Auth state updated - isAuthenticated: true, user:", username);
   };
 
   const logout = () => {

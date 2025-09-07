@@ -29,6 +29,7 @@ const Login = () => {
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     if (username === validUsername && password === validPassword) {
+      console.log("Credentials valid, calling login...");
       // Use the auth context login function
       login(username);
       
@@ -37,6 +38,7 @@ const Login = () => {
         description: `Welcome back, ${username}!`,
       });
       
+      console.log("Login process completed");
       // Navigation will happen automatically via the ProtectedRoute
     } else {
       setError("Invalid username or password");
