@@ -67,6 +67,48 @@ async function logActivity(
 }
 
 // Your specific strategy implementation
+function findSetupCandle(candles: CandleData[]): CandleData | null {
+  // Find the setup candle that falls within 09:57-10:00 AM IST
+  // The setup candle is the 3-minute candle from 09:57:00 to 09:59:59 IST
+  
+  for (let i = candles.length - 1; i >= 0; i--) {
+    const candle = candles[i];
+    if (!candle.timestamp) continue;
+    
+    // Parse the timestamp and convert to IST
+    const candleTime = new Date(candle.timestamp);
+    const istTime = new Date(candleTime.getTime() + (5.5 * 60 * 60 * 1000));
+    
+    const hour = istTime.getHours();
+    const minute = istTime.getMinutes();
+    
+    // Check if this candle is the 09:57-10:00 AM setup candle
+    // For 3-minute candles, the 09:57 candle covers 09:57:00 to 09:59:59
+    if (hour === 9 && minute === 57) {
+      return candle;
+    }
+  }
+  
+  // If exact 09:57 candle not found, look for the closest setup candle in the 09:54-10:00 range
+  for (let i = candles.length - 1; i >= 0; i--) {
+    const candle = candles[i];
+    if (!candle.timestamp) continue;
+    
+    const candleTime = new Date(candle.timestamp);
+    const istTime = new Date(candleTime.getTime() + (5.5 * 60 * 60 * 1000));
+    
+    const hour = istTime.getHours();
+    const minute = istTime.getMinutes();
+    
+    // Accept candles between 09:54 and 09:59 as potential setup candles
+    if (hour === 9 && minute >= 54 && minute <= 59) {
+      return candle;
+    }
+  }
+  
+  return null;
+}
+
 function calculateSMA50(prices: number[]): number {
   if (prices.length < 50) return 0;
   const sum = prices.slice(-50).reduce((a, b) => a + b, 0);
@@ -171,15 +213,15 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
   }
 
   // CRITICAL VALIDATION: Setup candle from 09:57:00-09:59:59 period
-  // Must be found in historical data, not current candles
-  const setupCandle = candles[Math.max(0, candles.length - 15)]; // Look further back for setup
+  // Find the setup candle by actual timestamp (09:57 - 10:00 AM IST)
+  const setupCandle = findSetupCandle(candles);
   if (!setupCandle) {
     return {
       symbol: '',
       action: 'HOLD',
       price: 0,
       quantity: 0,
-      reason: 'Setup candle not found in historical data'
+      reason: 'Setup candle (09:57-10:00 AM IST) not found in historical data'
     };
   }
 
