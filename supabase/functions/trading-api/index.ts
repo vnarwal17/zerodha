@@ -433,41 +433,42 @@ async function analyzeIntradayStrategy(candles: CandleData[], currentPrice: numb
 }
 
 serve(async (req) => {
-  console.log('Edge function called:', req.method, req.url);
-  
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // Log the incoming request for debugging
-    console.log('Request headers:', Object.fromEntries(req.headers.entries()));
-    
-    let requestData: any = {};
+    // Simple request body parsing with fallback
+    let requestBody: any = {};
     let path = '';
     
     try {
-      const body = await req.json();
-      console.log('Parsed request body:', body);
-      path = body.path;
-      requestData = body;
-    } catch (jsonError) {
-      console.error('Failed to parse JSON:', jsonError);
-      return Response.json({
+      const text = await req.text();
+      if (text) {
+        requestBody = JSON.parse(text);
+        path = requestBody.path || '';
+      }
+    } catch (parseError) {
+      console.error('JSON parse error:', parseError);
+      return new Response(JSON.stringify({
         status: 'error',
-        message: 'Invalid JSON in request body'
-      }, { headers: corsHeaders });
+        message: 'Invalid request format'
+      }), { 
+        status: 400, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
     
     if (!path) {
-      console.error('No path provided in request');
-      return Response.json({
+      return new Response(JSON.stringify({
         status: 'error',
-        message: 'Path is required'
-      }, { headers: corsHeaders });
+        message: 'Path parameter is required'
+      }), { 
+        status: 400, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
-    
-    console.log('Processing path:', path);
     
     // Initialize Supabase client
     const supabaseClient = createClient(
@@ -479,40 +480,48 @@ serve(async (req) => {
       case '/set_credentials':
         await logActivity(supabaseClient, 'SYSTEM', 'CREDENTIALS_UPDATE', 'API credentials being updated');
         
-        const { api_key, api_secret } = requestData
+        const { api_key, api_secret } = requestBody;
           
-          if (!api_key || !api_secret) {
-            await logActivity(supabaseClient, 'SYSTEM', 'CREDENTIALS_ERROR', 'Missing API credentials', 'SYSTEM', 'error');
-            return Response.json({
-              status: "error",
-              message: "Both API key and secret are required"
-            }, { headers: corsHeaders })
-          }
+        if (!api_key || !api_secret) {
+          await logActivity(supabaseClient, 'SYSTEM', 'CREDENTIALS_ERROR', 'Missing API credentials', 'SYSTEM', 'error');
+          return new Response(JSON.stringify({
+            status: "error",
+            message: "Both API key and secret are required"
+          }), { 
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
 
-          // Store credentials securely in Supabase
-          const { error: credentialsError } = await supabaseClient
-            .from('trading_credentials')
-            .upsert({
-              id: 1,
-              api_key,
-              api_secret,
-              updated_at: new Date().toISOString()
-            })
+        // Store credentials securely in Supabase
+        const { error: credentialsError } = await supabaseClient
+          .from('trading_credentials')
+          .upsert({
+            id: 1,
+            api_key,
+            api_secret,
+            updated_at: new Date().toISOString()
+          });
 
-          if (credentialsError) {
-            await logActivity(supabaseClient, 'SYSTEM', 'CREDENTIALS_ERROR', 'Failed to save credentials', 'SYSTEM', 'error');
-            return Response.json({
-              status: "error",
-              message: credentialsError.message
-            }, { headers: corsHeaders })
-          }
+        if (credentialsError) {
+          await logActivity(supabaseClient, 'SYSTEM', 'CREDENTIALS_ERROR', 'Failed to save credentials', 'SYSTEM', 'error');
+          return new Response(JSON.stringify({
+            status: "error",
+            message: credentialsError.message
+          }), { 
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
 
-          await logActivity(supabaseClient, 'SYSTEM', 'CREDENTIALS_SAVED', 'Trading credentials saved successfully', 'SYSTEM', 'success');
-          
-          return Response.json({
-            status: "success",
-            message: "Credentials updated successfully"
-          }, { headers: corsHeaders })
+        await logActivity(supabaseClient, 'SYSTEM', 'CREDENTIALS_SAVED', 'Trading credentials saved successfully', 'SYSTEM', 'success');
+        
+        return new Response(JSON.stringify({
+          status: "success",
+          message: "Credentials updated successfully"
+        }), { 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
         break
 
       case '/login':
