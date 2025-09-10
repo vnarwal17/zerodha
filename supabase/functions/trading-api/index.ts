@@ -12,10 +12,10 @@ async function generateChecksum(apiKey: string, requestToken: string, apiSecret:
 }
 
 // Helper function to make authenticated API calls to Zerodha
-async function makeKiteApiCall(endpoint: string, accessToken: string, method: string = 'GET', body?: any) {
+async function makeKiteApiCall(endpoint: string, accessToken: string, apiKey: string, method: string = 'GET', body?: any) {
   const url = `https://api.kite.trade${endpoint}`;
   const headers = {
-    'Authorization': `token ${accessToken}`,
+    'Authorization': `token ${apiKey}:${accessToken}`,
     'X-Kite-Version': '3',
     'Content-Type': 'application/json'
   };
@@ -228,8 +228,25 @@ serve(async (req) => {
         }
 
         try {
+          // Get credentials for API key
+          const { data: credentialsData } = await supabaseClient
+            .from('trading_credentials')
+            .select('*')
+            .eq('id', 1)
+            .maybeSingle();
+
+          if (!credentialsData) {
+            return new Response(JSON.stringify({
+              status: 'error',
+              message: 'API credentials not found'
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
           // Test connection by fetching profile
-          const profileData = await makeKiteApiCall('/user/profile', sessionData.access_token);
+          const profileData = await makeKiteApiCall('/user/profile', sessionData.access_token, credentialsData.api_key);
           
           if (profileData.status === 'success') {
             return new Response(JSON.stringify({
@@ -282,11 +299,35 @@ serve(async (req) => {
         }
 
         try {
+          // Get credentials for API key
+          const { data: credentialsData } = await supabaseClient
+            .from('trading_credentials')
+            .select('*')
+            .eq('id', 1)
+            .maybeSingle();
+
+          if (!credentialsData) {
+            return new Response(JSON.stringify({
+              status: 'success',
+              data: {
+                live_status: {
+                  is_trading: false,
+                  market_open: false,
+                  active_positions: [],
+                  strategy_logs: [],
+                  error: 'API credentials not found'
+                }
+              }
+            }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
           // Fetch real positions data from Zerodha API
-          const positionsData = await makeKiteApiCall('/portfolio/positions', liveStatusSessionData.access_token);
+          const positionsData = await makeKiteApiCall('/portfolio/positions', liveStatusSessionData.access_token, credentialsData.api_key);
           
           // Check market status
-          const marketData = await makeKiteApiCall('/market/status', liveStatusSessionData.access_token);
+          const marketData = await makeKiteApiCall('/market/status', liveStatusSessionData.access_token, credentialsData.api_key);
           
           return new Response(JSON.stringify({
             status: 'success',
@@ -338,8 +379,25 @@ serve(async (req) => {
         }
 
         try {
+          // Get credentials for API key
+          const { data: credentialsData } = await supabaseClient
+            .from('trading_credentials')
+            .select('*')
+            .eq('id', 1)
+            .maybeSingle();
+
+          if (!credentialsData) {
+            return new Response(JSON.stringify({
+              status: 'error',
+              message: 'API credentials not found'
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
           // Fetch real balance data from Zerodha API
-          const balanceData = await makeKiteApiCall('/user/margins', balanceSessionData.access_token);
+          const balanceData = await makeKiteApiCall('/user/margins', balanceSessionData.access_token, credentialsData.api_key);
           
           if (balanceData.status === 'success') {
             return new Response(JSON.stringify({
@@ -383,8 +441,25 @@ serve(async (req) => {
         }
 
         try {
+          // Get credentials for API key
+          const { data: credentialsData } = await supabaseClient
+            .from('trading_credentials')
+            .select('*')
+            .eq('id', 1)
+            .maybeSingle();
+
+          if (!credentialsData) {
+            return new Response(JSON.stringify({
+              status: 'error',
+              message: 'API credentials not found'
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
           // Fetch real instruments data from Zerodha API
-          const instrumentsData = await makeKiteApiCall('/instruments', instrumentsSessionData.access_token);
+          const instrumentsData = await makeKiteApiCall('/instruments', instrumentsSessionData.access_token, credentialsData.api_key);
           
           // Filter for equity instruments
           const equityInstruments = instrumentsData.filter((instrument: any) => 
