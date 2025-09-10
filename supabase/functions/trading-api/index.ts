@@ -157,7 +157,7 @@ function isValidRejectionCandle(candle: CandleData, sma50: number, bias: 'LONG' 
   return false;
 }
 
-function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
+async function analyzeIntradayStrategy(candles: CandleData[], currentPrice: number, supabaseClient: any, symbol: string): Promise<StrategySignal> {
   // CRITICAL VALIDATION: Ensure minimum candles for proper analysis
   if (candles.length < 50) {
     return {
@@ -339,11 +339,20 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
     
     // FINAL CHECK: Current price must clearly break above entry with conviction
     if (currentPrice >= entryPrice && (currentPrice - entryPrice) >= 0.05) {
+      // Get quantity from settings
+      const { data: settingsData } = await supabaseClient
+        .from('trading_settings')
+        .select('quantity')
+        .eq('id', 1)
+        .maybeSingle();
+      
+      const quantity = settingsData?.quantity || 2;
+      
       return {
         symbol: '',
         action: 'BUY',
         price: entryPrice,
-        quantity: 1,
+        quantity: quantity,
         reason: `LONG entry triggered. Entry: ${entryPrice.toFixed(2)}, SL: ${stopLoss.toFixed(2)}, Target: ${target.toFixed(2)} (5R)`
       };
     } else {
@@ -387,11 +396,20 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
     
     // FINAL CHECK: Current price must clearly break below entry with conviction
     if (currentPrice <= entryPrice && (entryPrice - currentPrice) >= 0.05) {
+      // Get quantity from settings
+      const { data: settingsData } = await supabaseClient
+        .from('trading_settings')
+        .select('quantity')
+        .eq('id', 1)
+        .maybeSingle();
+      
+      const quantity = settingsData?.quantity || 2;
+      
       return {
         symbol: '',
         action: 'SELL',
         price: entryPrice,
-        quantity: 1,
+        quantity: quantity,
         reason: `SHORT entry triggered. Entry: ${entryPrice.toFixed(2)}, SL: ${stopLoss.toFixed(2)}, Target: ${target.toFixed(2)} (5R)`
       };
     } else {
@@ -412,6 +430,223 @@ function analyzeIntradayStrategy(candles: CandleData[]): StrategySignal {
     quantity: 0,
     reason: 'No valid signal generated'
   };
+}
+
+// WebSocket connection management for real-time data
+const wsConnections = new Map<string, WebSocket>();
+const subscribedInstruments = new Map<string, Set<number>>();
+
+// Market data parsing utilities based on Kite WebSocket documentation
+function parseWebSocketMessage(buffer: ArrayBuffer): any[] {
+  const view = new DataView(buffer);
+  const packets = [];
+  
+  if (buffer.byteLength < 2) return packets;
+  
+  const numPackets = view.getUint16(0, false); // Big-endian
+  let offset = 2;
+  
+  for (let i = 0; i < numPackets; i++) {
+    if (offset + 2 > buffer.byteLength) break;
+    
+    const packetLength = view.getUint16(offset, false);
+    offset += 2;
+    
+    if (offset + packetLength > buffer.byteLength) break;
+    
+    const packetData = buffer.slice(offset, offset + packetLength);
+    const packet = parseQuotePacket(packetData);
+    if (packet) packets.push(packet);
+    
+    offset += packetLength;
+  }
+  
+  return packets;
+}
+
+function parseQuotePacket(buffer: ArrayBuffer): any | null {
+  if (buffer.byteLength < 8) return null;
+  
+  const view = new DataView(buffer);
+  const packet: any = {
+    instrument_token: view.getUint32(0, false),
+    last_price: view.getUint32(4, false) / 100, // Convert from paise to rupees
+  };
+  
+  // Parse additional fields based on packet size (mode)
+  if (buffer.byteLength >= 44) { // Quote mode
+    packet.last_quantity = view.getUint32(8, false);
+    packet.average_price = view.getUint32(12, false) / 100;
+    packet.volume = view.getUint32(16, false);
+    packet.buy_quantity = view.getUint32(20, false);
+    packet.sell_quantity = view.getUint32(24, false);
+    packet.ohlc = {
+      open: view.getUint32(28, false) / 100,
+      high: view.getUint32(32, false) / 100,
+      low: view.getUint32(36, false) / 100,
+      close: view.getUint32(40, false) / 100
+    };
+  }
+  
+  if (buffer.byteLength >= 184) { // Full mode with market depth
+    packet.last_trade_time = new Date(view.getUint32(44, false) * 1000);
+    packet.oi = view.getUint32(48, false);
+    packet.oi_day_high = view.getUint32(52, false);
+    packet.oi_day_low = view.getUint32(56, false);
+    packet.exchange_timestamp = new Date(view.getUint32(60, false) * 1000);
+    
+    // Parse market depth (10 entries of 12 bytes each)
+    packet.depth = {
+      buy: [],
+      sell: []
+    };
+    
+    let depthOffset = 64;
+    // 5 buy entries
+    for (let i = 0; i < 5; i++) {
+      packet.depth.buy.push({
+        quantity: view.getUint32(depthOffset, false),
+        price: view.getUint32(depthOffset + 4, false) / 100,
+        orders: view.getUint16(depthOffset + 8, false)
+      });
+      depthOffset += 12;
+    }
+    
+    // 5 sell entries
+    for (let i = 0; i < 5; i++) {
+      packet.depth.sell.push({
+        quantity: view.getUint32(depthOffset, false),
+        price: view.getUint32(depthOffset + 4, false) / 100,
+        orders: view.getUint16(depthOffset + 8, false)
+      });
+      depthOffset += 12;
+    }
+  }
+  
+  return packet;
+}
+
+// WebSocket connection management
+async function createWebSocketConnection(apiKey: string, accessToken: string): Promise<WebSocket> {
+  const wsUrl = `wss://ws.kite.trade?api_key=${apiKey}&access_token=${accessToken}`;
+  
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(wsUrl);
+    
+    ws.onopen = () => {
+      console.log('WebSocket connected to Kite');
+      resolve(ws);
+    };
+    
+    ws.onerror = (error) => {
+      console.error('WebSocket connection error:', error);
+      reject(error);
+    };
+    
+    ws.onmessage = (event) => {
+      try {
+        if (event.data instanceof ArrayBuffer) {
+          // Binary market data
+          const packets = parseWebSocketMessage(event.data);
+          for (const packet of packets) {
+            console.log('Market data packet:', packet);
+            // Process real-time market data for strategy analysis
+          }
+        } else {
+          // Text message (postbacks, errors, etc.)
+          const message = JSON.parse(event.data);
+          console.log('WebSocket text message:', message);
+          
+          if (message.type === 'order') {
+            // Handle order updates
+            console.log('Order update:', message.data);
+          } else if (message.type === 'error') {
+            console.error('WebSocket error:', message.data);
+          }
+        }
+      } catch (error) {
+        console.error('Error processing WebSocket message:', error);
+      }
+    };
+    
+    ws.onclose = () => {
+      console.log('WebSocket connection closed');
+    };
+  });
+}
+
+// Subscribe to instruments for real-time data
+function subscribeToInstruments(ws: WebSocket, instrumentTokens: number[], mode: 'ltp' | 'quote' | 'full' = 'quote') {
+  const subscribeMessage = {
+    a: 'subscribe',
+    v: instrumentTokens
+  };
+  
+  ws.send(JSON.stringify(subscribeMessage));
+  
+  // Set mode for instruments
+  const modeMessage = {
+    a: 'mode',
+    v: [mode, instrumentTokens]
+  };
+  
+  ws.send(JSON.stringify(modeMessage));
+}
+
+// Enhanced strategy analysis with real-time data
+async function analyzeStrategyWithRealTimeData(
+  supabaseClient: any,
+  symbol: string, 
+  instrumentToken: number,
+  realTimePrice?: number
+): Promise<StrategySignal> {
+  try {
+    // Get historical candles for strategy analysis
+    const today = new Date();
+    const fromDate = new Date(today.getTime() - (30 * 24 * 60 * 60 * 1000)); // 30 days ago
+    
+    // This should ideally come from the WebSocket real-time data
+    // For now, we'll use the existing historical data approach
+    const candlesResponse = await fetch(
+      `https://api.kite.trade/instruments/historical/${instrumentToken}/3minute?from=${fromDate.toISOString().split('T')[0]}&to=${today.toISOString().split('T')[0]}`,
+      {
+        headers: {
+          'Authorization': `token api_key:access_token`,
+          'X-Kite-Version': '3'
+        }
+      }
+    );
+    
+    if (!candlesResponse.ok) {
+      throw new Error('Failed to fetch historical data');
+    }
+    
+    const candlesData = await candlesResponse.json();
+    const candles = candlesData.data.candles.map((c: any) => ({
+      timestamp: c[0],
+      open: c[1],
+      high: c[2],
+      low: c[3],
+      close: c[4],
+      volume: c[5]
+    }));
+    
+    // Use real-time price if available, otherwise use last candle close
+    const currentPrice = realTimePrice || candles[candles.length - 1]?.close || 0;
+    
+    // Apply the enhanced strategy analysis
+    return await analyzeIntradayStrategy(candles, currentPrice, supabaseClient, symbol);
+    
+  } catch (error) {
+    console.error('Strategy analysis error:', error);
+    return {
+      symbol,
+      action: 'HOLD',
+      price: 0,
+      quantity: 0,
+      reason: `Analysis error: ${error.message}`
+    };
+  }
 }
 
 serve(async (req) => {
@@ -712,65 +947,131 @@ serve(async (req) => {
         break
 
       case '/start_live_trading':
-        const { symbols } = requestData
+        await logActivity(supabaseClient, 'TRADING', 'LIVE_START', 'Starting live trading with WebSocket');
         
-        await logActivity(supabaseClient, 'TRADING', 'START_TRADING', `Starting live trading for ${symbols.length} symbols`, 'SYSTEM', 'success', { symbol_count: symbols.length, symbols: symbols.map((s: TradingSymbol) => s.symbol) });
-          
-          // Store trading session
-          const { error: tradingError } = await supabaseClient
-            .from('trading_sessions')
-            .upsert({
-              id: 1,
-              trading_active: true,
-              symbols: symbols,
-              updated_at: new Date().toISOString()
-            })
-
-          if (tradingError) {
-            await logActivity(supabaseClient, 'TRADING', 'START_ERROR', 'Failed to start live trading', 'SYSTEM', 'error');
-            return Response.json({
-              status: "error",
-              message: tradingError.message
-            }, { headers: corsHeaders })
-          }
-
-          // Log individual symbols being monitored
-          for (const symbol of symbols) {
-            await logActivity(supabaseClient, 'ANALYSIS', 'SYMBOL_MONITOR', `Now monitoring ${symbol.symbol} for trading signals`, symbol.symbol, 'info');
-          }
-
+        const { symbols: liveSymbols } = requestData
+        
+        if (!liveSymbols || !Array.isArray(liveSymbols)) {
           return Response.json({
-            status: "success",
-            message: `Started live trading for ${symbols.length} symbols`,
-            data: { symbols: symbols.map((s: TradingSymbol) => s.symbol) }
+            status: "error",
+            message: "Invalid symbols array"
           }, { headers: corsHeaders })
+        }
+
+        // Get credentials for WebSocket connection
+        const { data: credentialsData } = await supabaseClient
+          .from('trading_credentials')
+          .select('*')
+          .eq('id', 1)
+          .maybeSingle()
+
+        const { data: sessionData } = await supabaseClient
+          .from('trading_sessions')
+          .select('*')
+          .eq('id', 1)
+          .maybeSingle()
+
+        if (!credentialsData || !sessionData?.access_token) {
+          return Response.json({
+            status: "error",
+            message: "Missing credentials or access token for WebSocket connection"
+          }, { headers: corsHeaders })
+        }
+
+        try {
+          // Create WebSocket connection for real-time data
+          const ws = await createWebSocketConnection(credentialsData.api_key, sessionData.access_token);
+          
+          // Extract instrument tokens for subscription
+          const instrumentTokens = liveSymbols
+            .filter((s: any) => s.token)
+            .map((s: any) => s.token);
+          
+          if (instrumentTokens.length > 0) {
+            // Subscribe to real-time market data
+            subscribeToInstruments(ws, instrumentTokens, 'quote');
+            wsConnections.set('live_trading', ws);
+            
+            await logActivity(supabaseClient, 'WEBSOCKET', 'SUBSCRIBED', `Subscribed to ${instrumentTokens.length} instruments`);
+          }
+          
+        } catch (wsError: any) {
+          await logActivity(supabaseClient, 'WEBSOCKET', 'CONNECTION_ERROR', `WebSocket connection failed: ${wsError.message}`, 'TRADING', 'error');
+          // Continue without WebSocket - fallback to polling
+        }
+
+        // Update trading session
+        const { error: sessionError } = await supabaseClient
+          .from('trading_sessions')
+          .upsert({
+            id: 1,
+            trading_active: true,
+            symbols: liveSymbols,
+            updated_at: new Date().toISOString()
+          })
+
+        if (sessionError) {
+          return Response.json({
+            status: "error",
+            message: sessionError.message
+          }, { headers: corsHeaders })
+        }
+
+        // Log individual symbols being monitored
+        for (const symbol of liveSymbols) {
+          await logActivity(supabaseClient, 'ANALYSIS', 'SYMBOL_MONITOR', `Now monitoring ${symbol.symbol || symbol} for trading signals`, symbol.symbol || symbol, 'info');
+        }
+
+        await logActivity(supabaseClient, 'TRADING', 'LIVE_STARTED', `Live trading started for ${liveSymbols.length} symbols with WebSocket support`, 'TRADING', 'success');
+        
+        return Response.json({
+          status: "success",
+          data: {
+            symbols: liveSymbols.map((s: any) => s.symbol || s),
+            websocket_connected: wsConnections.has('live_trading')
+          }
+        }, { headers: corsHeaders })
         break
 
       case '/stop_live_trading':
-          await logActivity(supabaseClient, 'TRADING', 'STOP_TRADING', 'Stopping live trading', 'SYSTEM', 'warning');
-          
-          const { error: stopError } = await supabaseClient
-            .from('trading_sessions')
-            .upsert({
-              id: 1,
-              trading_active: false,
-              updated_at: new Date().toISOString()
-            })
-
-          if (stopError) {
-            await logActivity(supabaseClient, 'TRADING', 'STOP_ERROR', 'Failed to stop live trading', 'SYSTEM', 'error');
-            return Response.json({
-              status: "error",
-              message: stopError.message
-            }, { headers: corsHeaders })
+        await logActivity(supabaseClient, 'TRADING', 'LIVE_STOP', 'Stopping live trading and WebSocket');
+        
+        // Close WebSocket connections
+        const liveWS = wsConnections.get('live_trading');
+        if (liveWS) {
+          try {
+            liveWS.close();
+            wsConnections.delete('live_trading');
+            await logActivity(supabaseClient, 'WEBSOCKET', 'DISCONNECTED', 'WebSocket connection closed');
+          } catch (wsError: any) {
+            await logActivity(supabaseClient, 'WEBSOCKET', 'CLOSE_ERROR', `Error closing WebSocket: ${wsError.message}`, 'TRADING', 'error');
           }
+        }
+        
+        // Update trading session
+        const { error: stopSessionError } = await supabaseClient
+          .from('trading_sessions')
+          .upsert({
+            id: 1,
+            trading_active: false,
+            updated_at: new Date().toISOString()
+          })
 
-          await logActivity(supabaseClient, 'TRADING', 'STOP_SUCCESS', 'Live trading stopped successfully', 'SYSTEM', 'success');
-
+        if (stopSessionError) {
           return Response.json({
-            status: "success",
-            message: "Live trading stopped"
+            status: "error",
+            message: stopSessionError.message
           }, { headers: corsHeaders })
+        }
+
+        await logActivity(supabaseClient, 'TRADING', 'LIVE_STOPPED', 'Live trading and WebSocket stopped successfully', 'TRADING', 'info');
+        
+        return Response.json({
+          status: "success",
+          data: {
+            websocket_disconnected: true
+          }
+        }, { headers: corsHeaders })
         break
 
       case '/live_status':
@@ -943,8 +1244,11 @@ serve(async (req) => {
               volume: candle[5]
             }))
 
+            // Get current price from last candle
+            const currentPrice = candles[candles.length - 1]?.close || 0;
+            
             // Analyze strategy for this symbol with database integration
-            const signal = await analyzeIntradayStrategy(candles, symbol, supabaseClient)
+            const signal = await analyzeIntradayStrategy(candles, currentPrice, supabaseClient, symbol)
 
             return Response.json({
               status: "success",
@@ -1378,7 +1682,9 @@ serve(async (req) => {
                   volume: candle[5]
                 }))
 
-                const signal = await analyzeIntradayStrategy(candles, sym.symbol, supabaseClient)
+                // Get current price from last candle  
+                const currentPrice = candles[candles.length - 1]?.close || 0;
+                const signal = await analyzeIntradayStrategy(candles, currentPrice, supabaseClient, sym.symbol)
                 signals.push(signal)
               }
             }
