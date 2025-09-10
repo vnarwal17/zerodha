@@ -161,9 +161,18 @@ serve(async (req) => {
           status: 'success',
           data: {
             balance: {
-              available: { cash: 50000, live_balance: { cash: 50000 } },
-              utilised: { debits: 0 },
+              available: { 
+                cash: 50000, 
+                live_balance: { cash: 50000 },
+                collateral: 25000
+              },
+              utilised: { 
+                debits: 0,
+                m2m_realised: 1250.50,
+                m2m_unrealised: -350.25
+              },
               equity: { 
+                net: 75000,
                 available: { cash: 50000 },
                 utilised: { exposure: 0, holding_sales: 0, turnover: 0, debits: 0 }
               }
