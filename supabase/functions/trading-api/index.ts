@@ -163,7 +163,10 @@ serve(async (req) => {
             balance: {
               available: { cash: 50000, live_balance: { cash: 50000 } },
               utilised: { debits: 0 },
-              equity: { available: { cash: 50000 } }
+              equity: { 
+                available: { cash: 50000 },
+                utilised: { exposure: 0, holding_sales: 0, turnover: 0, debits: 0 }
+              }
             },
             user_id: 'demo_user'
           }
