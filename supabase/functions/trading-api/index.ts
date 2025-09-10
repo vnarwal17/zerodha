@@ -1,6 +1,34 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+// Helper function to generate checksum for Zerodha API
+async function generateChecksum(apiKey: string, requestToken: string, apiSecret: string): Promise<string> {
+  const data = apiKey + requestToken + apiSecret;
+  const encoder = new TextEncoder();
+  const dataBuffer = encoder.encode(data);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Helper function to make authenticated API calls to Zerodha
+async function makeKiteApiCall(endpoint: string, accessToken: string, method: string = 'GET', body?: any) {
+  const url = `https://api.kite.trade${endpoint}`;
+  const headers = {
+    'Authorization': `token ${accessToken}`,
+    'X-Kite-Version': '3',
+    'Content-Type': 'application/json'
+  };
+
+  const options: RequestInit = { method, headers };
+  if (body && method !== 'GET') {
+    options.body = JSON.stringify(body);
+  }
+
+  const response = await fetch(url, options);
+  return await response.json();
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -90,24 +118,25 @@ serve(async (req) => {
       case '/login':
         const { request_token } = requestData;
         
+        // Get stored credentials
+        const { data: credentialsData } = await supabaseClient
+          .from('trading_credentials')
+          .select('*')
+          .eq('id', 1)
+          .maybeSingle();
+
+        if (!credentialsData) {
+          return new Response(JSON.stringify({
+            status: 'error',
+            message: 'API credentials not found. Please set up credentials first.'
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
         if (!request_token) {
           // Return login URL for initial login
-          const { data: credentialsData } = await supabaseClient
-            .from('trading_credentials')
-            .select('*')
-            .eq('id', 1)
-            .maybeSingle();
-
-          if (!credentialsData) {
-            return new Response(JSON.stringify({
-              status: 'error',
-              message: 'API credentials not found. Please set up credentials first.'
-            }), {
-              status: 400,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            });
-          }
-
           const loginUrl = `https://kite.trade/connect/login?api_key=${credentialsData.api_key}&v=3`;
           
           return new Response(JSON.stringify({
@@ -119,88 +148,281 @@ serve(async (req) => {
           });
         }
 
-        // Handle request token exchange
-        return new Response(JSON.stringify({
-          status: 'success',
-          message: 'Login functionality needs full implementation',
-          data: { user_id: 'demo_user' }
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+        // Exchange request token for access token
+        try {
+          const sessionResponse = await fetch('https://api.kite.trade/session/token', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'X-Kite-Version': '3'
+            },
+            body: new URLSearchParams({
+              api_key: credentialsData.api_key,
+              request_token: request_token,
+              checksum: await generateChecksum(credentialsData.api_key, request_token, credentialsData.api_secret)
+            })
+          });
+
+          const sessionData = await sessionResponse.json();
+          
+          if (!sessionResponse.ok) {
+            return new Response(JSON.stringify({
+              status: 'error',
+              message: sessionData.message || 'Login failed'
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
+          // Store session data
+          await supabaseClient
+            .from('trading_sessions')
+            .upsert({
+              id: 1,
+              access_token: sessionData.data.access_token,
+              user_id: sessionData.data.user_id,
+              user_name: sessionData.data.user_name,
+              status: 'authenticated',
+              expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+              updated_at: new Date().toISOString()
+            });
+
+          return new Response(JSON.stringify({
+            status: 'success',
+            message: 'Login successful',
+            data: { 
+              user_id: sessionData.data.user_id,
+              user_name: sessionData.data.user_name
+            }
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+
+        } catch (error) {
+          return new Response(JSON.stringify({
+            status: 'error',
+            message: `Login error: ${error.message}`
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
 
       case '/test_connection':
-        return new Response(JSON.stringify({
-          status: 'connected',
-          message: 'Connection test successful',
-          data: { 
-            user_id: 'demo_user',
-            user_name: 'Demo User',
-            status: 'connected'
+        // Check if we have valid session
+        const { data: sessionData } = await supabaseClient
+          .from('trading_sessions')
+          .select('*')
+          .eq('id', 1)
+          .maybeSingle();
+
+        if (!sessionData || !sessionData.access_token || sessionData.status !== 'authenticated') {
+          return new Response(JSON.stringify({
+            status: 'disconnected',
+            message: 'Not connected to broker',
+            data: { status: 'disconnected' }
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        try {
+          // Test connection by fetching profile
+          const profileData = await makeKiteApiCall('/user/profile', sessionData.access_token);
+          
+          if (profileData.status === 'success') {
+            return new Response(JSON.stringify({
+              status: 'connected',
+              message: 'Connection test successful',
+              data: { 
+                user_id: profileData.data.user_id,
+                user_name: profileData.data.user_name,
+                status: 'connected'
+              }
+            }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          } else {
+            throw new Error(profileData.message || 'Connection test failed');
           }
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+        } catch (error) {
+          return new Response(JSON.stringify({
+            status: 'error',
+            message: `Connection test failed: ${error.message}`,
+            data: { status: 'disconnected' }
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
 
       case '/live_status':
-        return new Response(JSON.stringify({
-          status: 'success',
-          data: {
-            live_status: {
-              is_trading: false,
-              market_open: true,
-              active_positions: [],
-              strategy_logs: []
+        // Get session data
+        const { data: liveStatusSessionData } = await supabaseClient
+          .from('trading_sessions')
+          .select('*')
+          .eq('id', 1)
+          .maybeSingle();
+
+        if (!liveStatusSessionData || !liveStatusSessionData.access_token) {
+          return new Response(JSON.stringify({
+            status: 'success',
+            data: {
+              live_status: {
+                is_trading: false,
+                market_open: false,
+                active_positions: [],
+                strategy_logs: []
+              }
             }
-          }
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        try {
+          // Fetch real positions data from Zerodha API
+          const positionsData = await makeKiteApiCall('/portfolio/positions', liveStatusSessionData.access_token);
+          
+          // Check market status
+          const marketData = await makeKiteApiCall('/market/status', liveStatusSessionData.access_token);
+          
+          return new Response(JSON.stringify({
+            status: 'success',
+            data: {
+              live_status: {
+                is_trading: liveStatusSessionData.trading_active || false,
+                market_open: marketData.data?.some((market: any) => market.status === 'open') || false,
+                active_positions: positionsData.data?.net || [],
+                strategy_logs: []
+              }
+            }
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+
+        } catch (error) {
+          return new Response(JSON.stringify({
+            status: 'success',
+            data: {
+              live_status: {
+                is_trading: false,
+                market_open: false,
+                active_positions: [],
+                strategy_logs: [],
+                error: `Failed to fetch live status: ${error.message}`
+              }
+            }
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
 
       case '/get_balance':
-        return new Response(JSON.stringify({
-          status: 'success',
-          data: {
-            balance: {
-              available: { 
-                cash: 50000, 
-                live_balance: { cash: 50000 },
-                collateral: 25000
-              },
-              utilised: { 
-                debits: 0,
-                m2m_realised: 1250.50,
-                m2m_unrealised: -350.25
-              },
-              equity: { 
-                net: 75000,
-                available: { cash: 50000 },
-                utilised: { exposure: 0, holding_sales: 0, turnover: 0, debits: 0 }
+        // Get session data
+        const { data: balanceSessionData } = await supabaseClient
+          .from('trading_sessions')
+          .select('*')
+          .eq('id', 1)
+          .maybeSingle();
+
+        if (!balanceSessionData || !balanceSessionData.access_token) {
+          return new Response(JSON.stringify({
+            status: 'error',
+            message: 'Not authenticated. Please login first.'
+          }), {
+            status: 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        try {
+          // Fetch real balance data from Zerodha API
+          const balanceData = await makeKiteApiCall('/user/margins', balanceSessionData.access_token);
+          
+          if (balanceData.status === 'success') {
+            return new Response(JSON.stringify({
+              status: 'success',
+              data: {
+                balance: balanceData.data.equity,
+                user_id: balanceSessionData.user_id
               }
-            },
-            user_id: 'demo_user'
+            }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          } else {
+            throw new Error(balanceData.message || 'Failed to fetch balance');
           }
-        }), {
+        } catch (error) {
+          return new Response(JSON.stringify({
+            status: 'error',
+            message: `Failed to fetch balance: ${error.message}`
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
 
       case '/instruments':
-        return new Response(JSON.stringify({
-          status: 'success',
-          data: {
-            instruments: [
-              { tradingsymbol: 'RELIANCE', instrument_token: 738561, exchange: 'NSE', name: 'RELIANCE INDUSTRIES LTD' },
-              { tradingsymbol: 'TCS', instrument_token: 2953217, exchange: 'NSE', name: 'TATA CONSULTANCY SERVICES LTD' },
-              { tradingsymbol: 'INFY', instrument_token: 408065, exchange: 'NSE', name: 'INFOSYS LTD' },
-              { tradingsymbol: 'HDFCBANK', instrument_token: 341249, exchange: 'NSE', name: 'HDFC BANK LTD' },
-              { tradingsymbol: 'ICICIBANK', instrument_token: 1270529, exchange: 'NSE', name: 'ICICI BANK LTD' }
-            ],
-            nifty50_stocks: ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK'],
-            banknifty_stocks: ['HDFCBANK', 'ICICIBANK'],
-            count: 5
-          }
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+        // Get session data
+        const { data: instrumentsSessionData } = await supabaseClient
+          .from('trading_sessions')
+          .select('*')
+          .eq('id', 1)
+          .maybeSingle();
+
+        if (!instrumentsSessionData || !instrumentsSessionData.access_token) {
+          return new Response(JSON.stringify({
+            status: 'error',
+            message: 'Not authenticated. Please login first.'
+          }), {
+            status: 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        try {
+          // Fetch real instruments data from Zerodha API
+          const instrumentsData = await makeKiteApiCall('/instruments', instrumentsSessionData.access_token);
+          
+          // Filter for equity instruments
+          const equityInstruments = instrumentsData.filter((instrument: any) => 
+            instrument.segment === 'NSE' && instrument.instrument_type === 'EQ'
+          ).slice(0, 100); // Limit to first 100 for performance
+
+          // Define NIFTY 50 and Bank NIFTY stocks
+          const nifty50_stocks = ['RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'HINDUNILVR', 'ICICIBANK', 'KOTAKBANK', 'LT', 'SBIN', 'BHARTIARTL'];
+          const banknifty_stocks = ['HDFCBANK', 'ICICIBANK', 'KOTAKBANK', 'SBIN', 'AXISBANK'];
+
+          return new Response(JSON.stringify({
+            status: 'success',
+            data: {
+              instruments: equityInstruments.map((instrument: any) => ({
+                tradingsymbol: instrument.tradingsymbol,
+                instrument_token: instrument.instrument_token,
+                exchange: instrument.exchange,
+                name: instrument.name
+              })),
+              nifty50_stocks,
+              banknifty_stocks,
+              count: equityInstruments.length
+            }
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+
+        } catch (error) {
+          return new Response(JSON.stringify({
+            status: 'error',
+            message: `Failed to fetch instruments: ${error.message}`
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
 
       case '/start_live_trading':
         return new Response(JSON.stringify({
