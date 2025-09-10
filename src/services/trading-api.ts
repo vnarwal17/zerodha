@@ -96,9 +96,13 @@ class TradingApiService {
 
   private async callEdgeFunction<T>(path: string, data?: any): Promise<ApiResponse<T>> {
     try {
+      console.log('Calling edge function:', path, data);
+      
       const { data: result, error } = await this.supabase.functions.invoke('trading-api', {
         body: { path, ...data }
       });
+
+      console.log('Edge function response:', { result, error });
 
       if (error) {
         console.error(`Edge function error for ${path}:`, error);
@@ -118,6 +122,11 @@ class TradingApiService {
     }
   }
 
+  // Add a test method to verify connectivity
+  async testConnection(): Promise<ApiResponse<any>> {
+    return this.callEdgeFunction('/test');
+  }
+
   // Credentials
   async setCredentials(apiKey: string, apiSecret: string): Promise<ApiResponse<{}>> {
     return this.callEdgeFunction('/set_credentials', { api_key: apiKey, api_secret: apiSecret });
@@ -128,7 +137,8 @@ class TradingApiService {
     return this.callEdgeFunction('/login', { request_token: requestToken });
   }
 
-  async testConnection(): Promise<ApiResponse<{ user_id: string; user_name: string; status?: string }>> {
+  // Connection test
+  async checkConnection(): Promise<ApiResponse<{ user_id: string; user_name: string; status?: string }>> {
     return this.callEdgeFunction('/test_connection');
   }
 

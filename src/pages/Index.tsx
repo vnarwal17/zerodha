@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { TradingHeader } from "@/components/trading/TradingHeader";
+import { ConnectionTest } from "@/components/trading/ConnectionTest";
 import { BrokerConnection } from "@/components/trading/BrokerConnection";
 import { BalanceDisplay } from "@/components/trading/BalanceDisplay";
 import { SymbolSelection } from "@/components/trading/SymbolSelection";
@@ -239,6 +240,7 @@ const Index = () => {
           </TabsList>
 
           <TabsContent value="setup" className="space-y-6">
+            <ConnectionTest />
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <BrokerConnection
                 isConnected={isConnected}

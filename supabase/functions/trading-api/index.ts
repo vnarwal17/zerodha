@@ -433,12 +433,41 @@ async function analyzeIntradayStrategy(candles: CandleData[], currentPrice: numb
 }
 
 serve(async (req) => {
+  console.log('Edge function called:', req.method, req.url);
+  
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const { path, ...requestData } = await req.json()
+    // Log the incoming request for debugging
+    console.log('Request headers:', Object.fromEntries(req.headers.entries()));
+    
+    let requestData: any = {};
+    let path = '';
+    
+    try {
+      const body = await req.json();
+      console.log('Parsed request body:', body);
+      path = body.path;
+      requestData = body;
+    } catch (jsonError) {
+      console.error('Failed to parse JSON:', jsonError);
+      return Response.json({
+        status: 'error',
+        message: 'Invalid JSON in request body'
+      }, { headers: corsHeaders });
+    }
+    
+    if (!path) {
+      console.error('No path provided in request');
+      return Response.json({
+        status: 'error',
+        message: 'Path is required'
+      }, { headers: corsHeaders });
+    }
+    
+    console.log('Processing path:', path);
     
     // Initialize Supabase client
     const supabaseClient = createClient(
@@ -1694,17 +1723,34 @@ serve(async (req) => {
         }
         break
 
+      case '/test':
+        console.log('Test endpoint called');
+        return Response.json({
+          status: "success",
+          message: "Edge function is working",
+          data: {
+            timestamp: new Date().toISOString(),
+            environment: {
+              SUPABASE_URL: Deno.env.get('SUPABASE_URL') ? 'set' : 'not set',
+              SUPABASE_ANON_KEY: Deno.env.get('SUPABASE_ANON_KEY') ? 'set' : 'not set'
+            }
+          }
+        }, { headers: corsHeaders });
+
       default:
+        console.log('Unknown endpoint:', path);
         return Response.json({
           status: "error",
-          message: "Endpoint not found"
+          message: `Endpoint not found: ${path}`
         }, { status: 404, headers: corsHeaders })
     }
 
   } catch (error) {
+    console.error('Edge function error:', error);
+    console.error('Error stack:', error.stack);
     return Response.json({
       status: "error",
-      message: error.message
+      message: `Internal server error: ${error.message}`
     }, { status: 500, headers: corsHeaders })
   }
 })
