@@ -156,6 +156,96 @@ serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
 
+      case '/get_balance':
+        return new Response(JSON.stringify({
+          status: 'success',
+          data: {
+            balance: {
+              available: { cash: 50000, live_balance: { cash: 50000 } },
+              utilised: { debits: 0 },
+              equity: { available: { cash: 50000 } }
+            },
+            user_id: 'demo_user'
+          }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+
+      case '/instruments':
+        return new Response(JSON.stringify({
+          status: 'success',
+          data: {
+            instruments: [
+              { tradingsymbol: 'RELIANCE', instrument_token: 738561, exchange: 'NSE', name: 'RELIANCE INDUSTRIES LTD' },
+              { tradingsymbol: 'TCS', instrument_token: 2953217, exchange: 'NSE', name: 'TATA CONSULTANCY SERVICES LTD' },
+              { tradingsymbol: 'INFY', instrument_token: 408065, exchange: 'NSE', name: 'INFOSYS LTD' },
+              { tradingsymbol: 'HDFCBANK', instrument_token: 341249, exchange: 'NSE', name: 'HDFC BANK LTD' },
+              { tradingsymbol: 'ICICIBANK', instrument_token: 1270529, exchange: 'NSE', name: 'ICICI BANK LTD' }
+            ],
+            nifty50_stocks: ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK'],
+            banknifty_stocks: ['HDFCBANK', 'ICICIBANK'],
+            count: 5
+          }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+
+      case '/start_live_trading':
+        return new Response(JSON.stringify({
+          status: 'success',
+          message: 'Live trading started successfully',
+          data: { symbols: requestData.symbols || [] }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+
+      case '/stop_live_trading':
+        return new Response(JSON.stringify({
+          status: 'success',
+          message: 'Live trading stopped successfully'
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+
+      case '/update_settings':
+        return new Response(JSON.stringify({
+          status: 'success',
+          message: 'Settings updated successfully'
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+
+      case '/get_performance':
+        return new Response(JSON.stringify({
+          status: 'success',
+          data: {
+            totalPnL: 1250.50,
+            totalTrades: 45,
+            winRate: 65.5,
+            avgWin: 85.25,
+            avgLoss: -42.10,
+            maxDrawdown: -850.00,
+            sharpeRatio: 1.45,
+            todayPnL: 125.50
+          }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+
+      case '/get_activity_logs':
+        return new Response(JSON.stringify({
+          status: 'success',
+          data: {
+            logs: [
+              { timestamp: new Date().toISOString(), message: 'Trading session started', level: 'info' },
+              { timestamp: new Date().toISOString(), message: 'Connected to broker', level: 'success' }
+            ],
+            count: 2
+          }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+
       default:
         return new Response(JSON.stringify({
           status: 'error',
