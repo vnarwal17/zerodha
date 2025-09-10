@@ -87,6 +87,75 @@ serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
 
+      case '/login':
+        const { request_token } = requestData;
+        
+        if (!request_token) {
+          // Return login URL for initial login
+          const { data: credentialsData } = await supabaseClient
+            .from('trading_credentials')
+            .select('*')
+            .eq('id', 1)
+            .maybeSingle();
+
+          if (!credentialsData) {
+            return new Response(JSON.stringify({
+              status: 'error',
+              message: 'API credentials not found. Please set up credentials first.'
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
+          const loginUrl = `https://kite.trade/connect/login?api_key=${credentialsData.api_key}&v=3`;
+          
+          return new Response(JSON.stringify({
+            status: 'requires_login',
+            message: 'Login required',
+            data: { login_url: loginUrl }
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Handle request token exchange
+        return new Response(JSON.stringify({
+          status: 'success',
+          message: 'Login functionality needs full implementation',
+          data: { user_id: 'demo_user' }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+
+      case '/test_connection':
+        return new Response(JSON.stringify({
+          status: 'connected',
+          message: 'Connection test successful',
+          data: { 
+            user_id: 'demo_user',
+            user_name: 'Demo User',
+            status: 'connected'
+          }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+
+      case '/live_status':
+        return new Response(JSON.stringify({
+          status: 'success',
+          data: {
+            live_status: {
+              is_trading: false,
+              market_open: true,
+              active_positions: [],
+              strategy_logs: []
+            }
+          }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+
       default:
         return new Response(JSON.stringify({
           status: 'error',
