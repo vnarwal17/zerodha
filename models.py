@@ -17,7 +17,7 @@ class StartTradingRequest(BaseModel):
     symbols: List[TradingSymbol]
 
 class TradingSettings(BaseModel):
-    dry_run: bool = True
+    dry_run: bool = False  # Enable live trading by default
     fixed_capital_per_trade: float = 100000
     risk_percent: float = 1.0
     leverage: float = 1.0

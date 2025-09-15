@@ -177,15 +177,21 @@ class ZerodhaClient:
     async def place_order(self, symbol: str, transaction_type: str, quantity: int, price: Optional[float] = None) -> Dict[str, Any]:
         """Place an order using the exact format shown in the image"""
         try:
+            # Format symbol correctly for NSE
+            if not symbol.endswith('-EQ'):
+                trading_symbol = f"{symbol}-EQ"
+            else:
+                trading_symbol = symbol
+                
             # Order data in exact format as specified
             order_data = {
                 'variety': 'regular',
                 'exchange': 'NSE', 
-                'tradingsymbol': symbol,
+                'tradingsymbol': trading_symbol,  # Use formatted symbol
                 'transaction_type': transaction_type,
                 'order_type': 'LIMIT' if price else 'MARKET',
                 'quantity': quantity,
-                'product': 'CNC',  # Cash and Carry for delivery
+                'product': 'MIS',  # Intraday for day trading
                 'validity': 'DAY',
                 'disclosed_quantity': 0,
                 'trigger_price': 0,
@@ -198,6 +204,7 @@ class ZerodhaClient:
             if price:
                 order_data['price'] = price
             
+            logger.info(f"Placing order: {order_data}")
             order_id = self.kite.place_order(**order_data)
             return {'status': 'success', 'order_id': order_id}
         except Exception as e:

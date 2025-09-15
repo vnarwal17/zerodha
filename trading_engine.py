@@ -22,8 +22,8 @@ class TradingEngine:
         self.CANDLE_INTERVAL = "3minute"
         self.SMA_PERIOD = 50
         self.SETUP_TIME = time(10, 0)  # 10:00 AM
-        self.ENTRY_OFFSET = 0.10
-        self.SL_OFFSET = 0.15
+        self.ENTRY_OFFSET = 0.01  # Strategy says ₹0.01 not ₹0.10
+        self.SL_OFFSET = 0.01     # Strategy says ₹0.01 not ₹0.15
         self.RISK_REWARD_RATIO = 5
         self.MIN_WICK_PERCENT = 15
         self.SKIP_CANDLES = 2
@@ -98,8 +98,12 @@ class TradingEngine:
         # Calculate SMA
         sma_value = self._calculate_sma(candles, self.SMA_PERIOD)
         
-        # Check for 10 AM setup
-        if current_time >= self.SETUP_TIME and state.bias is None:
+        # Check for 10 AM setup - only check the 9:57-10:00 candle
+        setup_start = time(9, 57)
+        setup_end = time(10, 0)
+        if (setup_start <= current_time <= setup_end and 
+            state.bias is None and 
+            latest_candle.timestamp.time() >= setup_end):
             await self._check_setup(symbol, state, latest_candle, sma_value)
         
         # Check for rejection candle
@@ -218,6 +222,10 @@ class TradingEngine:
             if order_result['status'] != 'success':
                 self._log(symbol, "ORDER_FAILED", f"Order placement failed: {order_result.get('message')}")
                 return
+            
+            self._log(symbol, "ORDER_PLACED", f"Order placed successfully: {order_result.get('order_id')}")
+        else:
+            self._log(symbol, "DRY_RUN", f"DRY RUN: Would place {direction.upper()} order @ {entry_price:.2f}")
         
         # Create position
         position = Position(
@@ -275,12 +283,19 @@ class TradingEngine:
         """Exit a position"""
         if not self.settings.dry_run:
             # Place exit order using the exact format specification
-            await self.zerodha.place_order(
+            exit_result = await self.zerodha.place_order(
                 symbol=position.symbol,
                 transaction_type="SELL" if position.direction == "long" else "BUY",
                 quantity=position.quantity,
                 price=exit_price
             )
+            
+            if exit_result['status'] == 'success':
+                self._log(position.symbol, "EXIT_ORDER_PLACED", f"Exit order placed: {exit_result.get('order_id')}")
+            else:
+                self._log(position.symbol, "EXIT_ORDER_FAILED", f"Exit order failed: {exit_result.get('message')}")
+        else:
+            self._log(position.symbol, "DRY_RUN", f"DRY RUN: Would exit {position.direction.upper()} @ {exit_price:.2f}")
         
         # Update position
         position.status = "CLOSED"
@@ -324,32 +339,46 @@ class TradingEngine:
         return max(1, quantity)  # Minimum 1 share
     
     async def _get_candle_data(self, symbol: str) -> List[CandleData]:
-        """Get latest candle data for symbol"""
-        # This would typically fetch from Zerodha API
-        # For now, return mock data
-        from_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-        to_date = datetime.now().strftime("%Y-%m-%d")
-        
-        # Mock implementation - replace with actual API call
-        candles = []
-        base_price = 100.0
-        for i in range(self.SMA_PERIOD + 10):
-            timestamp = datetime.now() - timedelta(minutes=(self.SMA_PERIOD + 10 - i) * 3)
-            open_price = base_price + np.random.uniform(-2, 2)
-            close_price = open_price + np.random.uniform(-1, 1)
-            high_price = max(open_price, close_price) + np.random.uniform(0, 1)
-            low_price = min(open_price, close_price) - np.random.uniform(0, 1)
+        """Get actual historical data from Zerodha"""
+        try:
+            # Get instrument token for symbol
+            instruments = await self.zerodha.get_instruments()
+            instrument = next((i for i in instruments if i['symbol'] == symbol), None)
+            if not instrument:
+                self._log(symbol, "ERROR", f"Instrument not found: {symbol}")
+                return []
             
-            candles.append(CandleData(
-                timestamp=timestamp,
-                open=open_price,
-                high=high_price,
-                low=low_price,
-                close=close_price,
-                volume=10000
-            ))
-        
-        return candles
+            # Get real historical data for last 2 days
+            from_date = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+            to_date = datetime.now().strftime("%Y-%m-%d")
+            
+            raw_data = await self.zerodha.get_historical_data(
+                instrument['token'], 
+                from_date, 
+                to_date, 
+                self.CANDLE_INTERVAL
+            )
+            
+            if not raw_data:
+                self._log(symbol, "ERROR", "No historical data received")
+                return []
+            
+            candles = []
+            for data in raw_data:
+                candles.append(CandleData(
+                    timestamp=data['date'],
+                    open=float(data['open']),
+                    high=float(data['high']),
+                    low=float(data['low']),
+                    close=float(data['close']),
+                    volume=int(data['volume'])
+                ))
+            
+            return candles
+            
+        except Exception as e:
+            self._log(symbol, "ERROR", f"Failed to get candle data: {str(e)}")
+            return []
     
     def _calculate_sma(self, candles: List[CandleData], period: int) -> float:
         """Calculate Simple Moving Average"""
