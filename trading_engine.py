@@ -82,16 +82,18 @@ class TradingEngine:
     
     async def _process_symbol_strategy(self, symbol: str, state: StrategyState):
         """Process strategy logic for a single symbol"""
-        current_time = datetime.now().time()
-        
-        # Skip if trade already completed for the day
-        if state.trade_completed:
-            return
-        
-        # Get latest candle data
-        candles = await self._get_candle_data(symbol)
-        if len(candles) < self.SMA_PERIOD + 1:
-            return
+        try:
+            current_time = datetime.now().time()
+            
+            # Skip if trade already completed for the day
+            if state.trade_completed:
+                return
+            
+            # Get latest candle data
+            candles = await self._get_candle_data(symbol)
+            if not candles or len(candles) < self.SMA_PERIOD + 1:
+                self._log(symbol, "ERROR", "Insufficient candle data")
+                return
         
         latest_candle = candles[-1]
         
@@ -101,9 +103,12 @@ class TradingEngine:
         # Check for 10 AM setup - only check the 9:57-10:00 candle
         setup_start = time(9, 57)
         setup_end = time(10, 0)
-        if (setup_start <= current_time <= setup_end and 
-            state.bias is None and 
-            latest_candle.timestamp.time() >= setup_end):
+        current_candle_time = latest_candle.timestamp.time()
+
+        # Only check setup if we're processing the 10:00 AM candle (9:57-10:00)
+        if (current_candle_time >= setup_end and 
+            current_candle_time <= time(10, 3) and  # Small buffer for candle completion
+            state.bias is None):
             await self._check_setup(symbol, state, latest_candle, sma_value)
         
         # Check for rejection candle
@@ -125,7 +130,10 @@ class TradingEngine:
         if state.is_position_active:
             await self._monitor_position(symbol, state, latest_candle)
         
-        state.last_update = datetime.now()
+            state.last_update = datetime.now()
+        except Exception as e:
+            self._log(symbol, "ERROR", f"Strategy processing failed: {str(e)}")
+            logger.error(f"Error processing {symbol}: {e}")
     
     async def _check_setup(self, symbol: str, state: StrategyState, candle: CandleData, sma_value: float):
         """Check for valid 10 AM setup"""
@@ -416,10 +424,15 @@ class TradingEngine:
             strategy_logs=self.logs[-50:]  # Last 50 logs
         )
     
-    async def update_settings(self, settings: Dict[str, Any]):
+    def _is_market_open(self) -> bool:
+        """Check if market is currently open"""
+        current_time = datetime.now().time()
+        return time(9, 15) <= current_time <= time(15, 30)
+    
+    async def update_settings(self, new_settings: dict):
         """Update trading settings"""
-        for key, value in settings.items():
+        for key, value in new_settings.items():
             if hasattr(self.settings, key):
                 setattr(self.settings, key, value)
         
-        self._log("SYSTEM", "SETTINGS_UPDATED", f"Settings updated: {settings}")
+        self._log("SYSTEM", "SETTINGS_UPDATED", f"Settings updated: {new_settings}")

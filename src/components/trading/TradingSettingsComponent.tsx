@@ -295,11 +295,11 @@ export function TradingSettingsComponent({ isConnected }: TradingSettingsProps) 
             </div>
             <div>
               <div className="text-muted-foreground">Entry Offset</div>
-              <div className="font-medium">₹0.10</div>
+              <div className="font-medium">₹0.01</div>
             </div>
             <div>
               <div className="text-muted-foreground">Stop Loss</div>
-              <div className="font-medium">Rejection Low/High ± ₹0.15</div>
+              <div className="font-medium">Rejection Low/High ± ₹0.01</div>
             </div>
             <div>
               <div className="text-muted-foreground">Risk:Reward</div>
