@@ -14,15 +14,37 @@ async function generateChecksum(apiKey: string, requestToken: string, apiSecret:
 // Helper function to make authenticated API calls to Zerodha
 async function makeKiteApiCall(endpoint: string, accessToken: string, apiKey: string, method: string = 'GET', body?: any) {
   const url = `https://api.kite.trade${endpoint}`;
-  const headers = {
-    'Authorization': `token ${apiKey}:${accessToken}`,
-    'X-Kite-Version': '3',
-    'Content-Type': 'application/json'
-  };
-
-  const options: RequestInit = { method, headers };
-  if (body && method !== 'GET') {
-    options.body = JSON.stringify(body);
+  
+  let options: RequestInit = { method };
+  
+  // For order placement, Zerodha expects form data, not JSON
+  if (endpoint.includes('/orders') && method === 'POST' && body) {
+    const formData = new URLSearchParams();
+    Object.keys(body).forEach(key => {
+      formData.append(key, body[key]);
+    });
+    
+    options = {
+      method,
+      headers: {
+        'Authorization': `token ${apiKey}:${accessToken}`,
+        'X-Kite-Version': '3',
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: formData
+    };
+  } else {
+    // For other endpoints, use JSON
+    const headers = {
+      'Authorization': `token ${apiKey}:${accessToken}`,
+      'X-Kite-Version': '3',
+      'Content-Type': 'application/json'
+    };
+    
+    options = { method, headers };
+    if (body && method !== 'GET') {
+      options.body = JSON.stringify(body);
+    }
   }
 
   const response = await fetch(url, options);
@@ -681,21 +703,33 @@ serve(async (req) => {
 
           const orderResponse = await makeKiteApiCall('/orders/regular', testOrderSessionData.access_token, credentialsData.api_key, 'POST', orderData);
           
-          if (orderResponse.status === 'success') {
+          console.log('Zerodha order response:', orderResponse);
+          
+          // Zerodha API returns order_id directly on success
+          if (orderResponse && orderResponse.order_id) {
             return new Response(JSON.stringify({
               status: 'success',
               data: {
-                order_id: orderResponse.data.order_id,
+                order_id: orderResponse.order_id,
                 symbol: testSymbol,
-                message: `✅ Real test order placed successfully on Zerodha! Order ID: ${orderResponse.data.order_id}`
+                message: `✅ Real test order placed successfully on Zerodha! Order ID: ${orderResponse.order_id}`
               }
             }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          } else if (orderResponse && orderResponse.error_type) {
+            // Handle Zerodha API errors
+            return new Response(JSON.stringify({
+              status: 'error',
+              message: `Zerodha API Error: ${orderResponse.message || orderResponse.error_type}`
+            }), {
+              status: 400,
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
           } else {
             return new Response(JSON.stringify({
               status: 'error',
-              message: `Test order failed: ${orderResponse.message || 'Unknown error from Zerodha API'}`
+              message: `Test order failed: ${JSON.stringify(orderResponse)}`
             }), {
               status: 500,
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
