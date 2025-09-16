@@ -112,12 +112,34 @@ class TradingApiService {
         };
       }
 
-      return result;
-    } catch (error) {
-      console.error(`API request failed for ${path}:`, error);
+      // Handle successful response
+      if (result && typeof result === 'object') {
+        return result;
+      }
+
+      // Fallback for unexpected response format
       return {
         status: 'error',
-        message: error instanceof Error ? error.message : 'Failed to connect to backend server'
+        message: 'Invalid response format from server'
+      };
+    } catch (error) {
+      console.error(`API request failed for ${path}:`, error);
+      
+      let errorMessage = 'Failed to connect to backend server';
+      
+      if (error instanceof Error) {
+        if (error.message.includes('fetch')) {
+          errorMessage = 'Network connection failed. Please check your internet connection.';
+        } else if (error.message.includes('timeout')) {
+          errorMessage = 'Request timed out. Please try again.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      return {
+        status: 'error',
+        message: errorMessage
       };
     }
   }
