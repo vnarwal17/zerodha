@@ -494,18 +494,25 @@ serve(async (req) => {
           ); // Return all instruments, no limit
 
           // Define NIFTY 50 and Bank NIFTY stocks
-          const nifty50_stocks = ['RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'HINDUNILVR', 'ICICIBANK', 'KOTAKBANK', 'LT', 'SBIN', 'BHARTIARTL'];
-          const banknifty_stocks = ['HDFCBANK', 'ICICIBANK', 'KOTAKBANK', 'SBIN', 'AXISBANK'];
+          const nifty50_stocks = ['RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'HINDUNILVR', 'ICICIBANK', 'KOTAKBANK', 'LT', 'SBIN', 'BHARTIARTL', 'ASIANPAINT', 'MARUTI', 'BAJFINANCE', 'AXISBANK', 'HCLTECH', 'NESTLEIND', 'ULTRACEMCO', 'TITAN', 'ADANIPORTS', 'POWERGRID', 'NTPC', 'COALINDIA', 'TECHM', 'TATAMOTORS', 'WIPRO', 'SUNPHARMA', 'ONGC', 'JSWSTEEL', 'INDUSINDBK', 'TATASTEEL', 'GRASIM', 'HINDALCO', 'DRREDDY', 'EICHERMOT', 'DIVISLAB', 'BAJAJFINSV', 'HEROMOTOCO', 'APOLLOHOSP', 'CIPLA', 'BRITANNIA', 'TATACONSUM', 'SHREECEM', 'UPL', 'IOC', 'BAJAJ-AUTO', 'M&M', 'BPCL', 'ADANIENT', 'SBILIFE', 'HDFCLIFE'];
+          const banknifty_stocks = ['HDFCBANK', 'ICICIBANK', 'KOTAKBANK', 'SBIN', 'AXISBANK', 'INDUSINDBK', 'BAJFINANCE', 'BAJAJFINSV', 'PNB', 'BANDHANBNK', 'FEDERALBNK', 'IDFCFIRSTB'];
 
           return new Response(JSON.stringify({
             status: 'success',
             data: {
-              instruments: equityInstruments.map((instrument: any) => ({
-                tradingsymbol: instrument.tradingsymbol || instrument.trading_symbol,
-                instrument_token: instrument.instrument_token,
-                exchange: instrument.exchange,
-                name: instrument.name || instrument.company_name
-              })),
+              instruments: equityInstruments.map((instrument: any) => {
+                const tradingSymbol = instrument.tradingsymbol || instrument.trading_symbol;
+                return {
+                  symbol: tradingSymbol,
+                  tradingsymbol: tradingSymbol,
+                  instrument_token: instrument.instrument_token,
+                  token: instrument.instrument_token,
+                  exchange: instrument.exchange,
+                  name: instrument.name || instrument.company_name || tradingSymbol,
+                  is_nifty50: nifty50_stocks.includes(tradingSymbol),
+                  is_banknifty: banknifty_stocks.includes(tradingSymbol)
+                };
+              }),
               nifty50_stocks,
               banknifty_stocks,
               count: equityInstruments.length
