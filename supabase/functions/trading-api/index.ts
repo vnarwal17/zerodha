@@ -557,7 +557,7 @@ serve(async (req) => {
               }),
               nifty50_stocks,
               banknifty_stocks,
-              count: equityInstruments.length
+              count: top500Instruments.length
             }
           }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -628,6 +628,30 @@ serve(async (req) => {
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
+
+      case '/place_test_order':
+        try {
+          const testSymbol = requestData.test_symbol || 'SBIN';
+          
+          return new Response(JSON.stringify({
+            status: 'success',
+            data: {
+              order_id: `TEST_${Date.now()}`,
+              symbol: testSymbol,
+              message: `Test order execution successful for ${testSymbol}. This is a simulated order for API testing.`
+            }
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        } catch (error) {
+          return new Response(JSON.stringify({
+            status: 'error',
+            message: `Test order failed: ${error.message}`
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
 
       default:
         return new Response(JSON.stringify({
