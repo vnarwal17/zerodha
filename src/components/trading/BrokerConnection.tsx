@@ -117,11 +117,6 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
     setLoading(true);
     try {
       console.log('Attempting login with token:', requestToken);
-      
-      // First test backend connectivity
-      const testResponse = await tradingApi.testConnection();
-      console.log('Backend test response:', testResponse);
-      
       const response = await tradingApi.login(requestToken);
       console.log('Token login response:', response);
       
@@ -136,49 +131,19 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
           title: "Connected Successfully! 🎉",
           description: `Welcome ${response.data.user_name || response.data.user_id}`,
         });
-      } else if (response.status === 'error') {
-        console.error('Token login failed with error:', response);
-        
-        let errorMessage = response.message || "Invalid request token. Please try again.";
-        
-        // Handle specific error types
-        if (response.message?.includes('credentials not found')) {
-          errorMessage = "API credentials not configured. Please set up your Zerodha API credentials first.";
-          setShowCredentialsSetup(true);
-          setShowConnectionModal(false);
-        } else if (response.message?.includes('expired') || response.message?.includes('invalid')) {
-          errorMessage = "Request token has expired or is invalid. Please get a new token from Zerodha login.";
-        } else if (response.message?.includes('network') || response.message?.includes('connection')) {
-          errorMessage = "Network connection issue. Please check your internet and try again.";
-        }
-        
-        toast({
-          title: "Authentication Failed",
-          description: errorMessage,
-          variant: "destructive",
-        });
       } else {
-        console.error('Unexpected response:', response);
+        console.error('Token login failed:', response);
         toast({
           title: "Authentication Failed",
-          description: "Unexpected response from server. Please try again.",
+          description: response.message || "Invalid request token. Please try again.",
           variant: "destructive",
         });
       }
     } catch (error) {
-      console.error('Token connection failed with exception:', error);
-      
-      let errorMessage = "Failed to authenticate. Please check your token and try again.";
-      
-      if (error.message?.includes('fetch')) {
-        errorMessage = "Connection failed. Please check your internet connection and try again.";
-      } else if (error.message?.includes('timeout')) {
-        errorMessage = "Request timed out. Please try again.";
-      }
-      
+      console.error('Token connection failed:', error);
       toast({
         title: "Connection Error",
-        description: errorMessage,
+        description: "Failed to authenticate. Please check your token and try again.",
         variant: "destructive",
       });
     } finally {

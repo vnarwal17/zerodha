@@ -8,7 +8,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 
 const Login = () => {
-  console.log('Login: Component rendering...');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -17,11 +16,8 @@ const Login = () => {
 
   // Redirect if already authenticated
   if (isAuthenticated) {
-    console.log('Login: Already authenticated, redirecting to /');
     return <Navigate to="/" replace />;
   }
-
-  console.log('Login: Rendering login form');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -112,34 +112,12 @@ class TradingApiService {
         };
       }
 
-      // Handle successful response
-      if (result && typeof result === 'object') {
-        return result;
-      }
-
-      // Fallback for unexpected response format
-      return {
-        status: 'error',
-        message: 'Invalid response format from server'
-      };
+      return result;
     } catch (error) {
       console.error(`API request failed for ${path}:`, error);
-      
-      let errorMessage = 'Failed to connect to backend server';
-      
-      if (error instanceof Error) {
-        if (error.message.includes('fetch')) {
-          errorMessage = 'Network connection failed. Please check your internet connection.';
-        } else if (error.message.includes('timeout')) {
-          errorMessage = 'Request timed out. Please try again.';
-        } else {
-          errorMessage = error.message;
-        }
-      }
-      
       return {
         status: 'error',
-        message: errorMessage
+        message: error instanceof Error ? error.message : 'Failed to connect to backend server'
       };
     }
   }
@@ -239,8 +217,6 @@ class TradingApiService {
     entry_price?: number;
     stop_loss?: number;
     take_profit?: number;
-    order_status?: string;
-    message?: string;
   }>> {
     return this.callEdgeFunction('/execute_trade', { 
       trade_symbol: symbol, 
@@ -251,34 +227,6 @@ class TradingApiService {
       stop_loss: stopLoss,
       take_profit: takeProfit
     });
-  }
-
-  // Enhanced order status checking
-  async getOrderStatus(orderId: string): Promise<ApiResponse<{
-    order_id: string;
-    status: string;
-    symbol: string;
-    quantity: number;
-    price?: number;
-    timestamp: string;
-  }>> {
-    return this.callEdgeFunction('/get_order_status', { order_id: orderId });
-  }
-
-  // Get recent orders for monitoring
-  async getRecentOrders(limit: number = 20): Promise<ApiResponse<{
-    orders: Array<{
-      order_id: string;
-      symbol: string;
-      action: 'BUY' | 'SELL';
-      quantity: number;
-      status: string;
-      price?: number;
-      timestamp: string;
-    }>;
-    count: number;
-  }>> {
-    return this.callEdgeFunction('/get_recent_orders', { limit });
   }
 
   async analyzeSymbols(symbols: TradingSymbol[]): Promise<ApiResponse<{
