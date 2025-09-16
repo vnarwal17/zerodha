@@ -26,7 +26,34 @@ async function makeKiteApiCall(endpoint: string, accessToken: string, apiKey: st
   }
 
   const response = await fetch(url, options);
+  
+  // Special handling for instruments endpoint which returns CSV
+  if (endpoint === '/instruments') {
+    const csvText = await response.text();
+    return parseCsvToInstruments(csvText);
+  }
+  
   return await response.json();
+}
+
+// Helper function to parse CSV instruments data
+function parseCsvToInstruments(csvText: string) {
+  const lines = csvText.trim().split('\n');
+  const headers = lines[0].split(',');
+  const instruments = [];
+  
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].split(',');
+    const instrument: any = {};
+    
+    headers.forEach((header, index) => {
+      instrument[header.trim()] = values[index]?.trim() || '';
+    });
+    
+    instruments.push(instrument);
+  }
+  
+  return instruments;
 }
 
 const corsHeaders = {
@@ -461,9 +488,9 @@ serve(async (req) => {
           // Fetch real instruments data from Zerodha API
           const instrumentsData = await makeKiteApiCall('/instruments', instrumentsSessionData.access_token, credentialsData.api_key);
           
-          // Filter for equity instruments
+          // Filter for equity instruments on NSE
           const equityInstruments = instrumentsData.filter((instrument: any) => 
-            instrument.segment === 'NSE' && instrument.instrument_type === 'EQ'
+            instrument.exchange === 'NSE' && instrument.instrument_type === 'EQ'
           ).slice(0, 100); // Limit to first 100 for performance
 
           // Define NIFTY 50 and Bank NIFTY stocks
@@ -474,10 +501,10 @@ serve(async (req) => {
             status: 'success',
             data: {
               instruments: equityInstruments.map((instrument: any) => ({
-                tradingsymbol: instrument.tradingsymbol,
+                tradingsymbol: instrument.tradingsymbol || instrument.trading_symbol,
                 instrument_token: instrument.instrument_token,
                 exchange: instrument.exchange,
-                name: instrument.name
+                name: instrument.name || instrument.company_name
               })),
               nifty50_stocks,
               banknifty_stocks,
