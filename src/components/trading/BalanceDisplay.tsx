@@ -11,28 +11,32 @@ interface BalanceDisplayProps {
 }
 
 interface BalanceData {
-  equity: {
-    enabled: boolean;
-    net: number;
-    available: {
-      adhoc_margin: number;
-      cash: number;
-      opening_balance: number;
-      live_balance: number;
-      collateral: number;
-      intraday_payin: number;
-    };
-    utilised: {
-      debits: number;
-      exposure: number;
-      m2m_realised: number;
-      m2m_unrealised: number;
-      option_premium: number;
-      payout: number;
-      span: number;
-      holding_sales: number;
-      turnover: number;
-    };
+  segment: string;
+  enabled: boolean;
+  net: number;
+  available: {
+    adhoc_margin: number;
+    cash: number;
+    opening_balance: number;
+    live_balance: number;
+    collateral: number;
+    intraday_payin: number;
+  };
+  utilised: {
+    debits: number;
+    exposure: number;
+    m2m_realised: number;
+    m2m_unrealised: number;
+    option_premium: number;
+    payout: number;
+    span: number;
+    holding_sales: number;
+    turnover: number;
+    liquid_collateral: number;
+    stock_collateral: number;
+    additional: number;
+    delivery: number;
+    equity: number;
   };
 }
 
@@ -143,16 +147,16 @@ export function BalanceDisplay({ isConnected }: BalanceDisplayProps) {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Net Balance</p>
-                  <p className="text-2xl font-bold">{formatCurrency(balance.equity.net)}</p>
+                  <p className="text-2xl font-bold">{formatCurrency(balance.net)}</p>
                 </div>
               </div>
-              <Badge variant={balance.equity.net >= 0 ? "default" : "destructive"}>
-                {balance.equity.net >= 0 ? (
+              <Badge variant={balance.net >= 0 ? "default" : "destructive"}>
+                {balance.net >= 0 ? (
                   <TrendingUp className="h-3 w-3 mr-1" />
                 ) : (
                   <TrendingDown className="h-3 w-3 mr-1" />
                 )}
-                {balance.equity.net >= 0 ? 'Positive' : 'Negative'}
+                {balance.net >= 0 ? 'Positive' : 'Negative'}
               </Badge>
             </div>
 
@@ -166,15 +170,15 @@ export function BalanceDisplay({ isConnected }: BalanceDisplayProps) {
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Cash:</span>
-                    <span className="font-medium">{formatCurrency(balance.equity.available.cash)}</span>
+                    <span className="font-medium">{formatCurrency(balance.available.cash || 0)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Live Balance:</span>
-                    <span className="font-medium">{formatCurrency(balance.equity.available.live_balance)}</span>
+                    <span className="font-medium">{formatCurrency(balance.available.live_balance || 0)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Collateral:</span>
-                    <span className="font-medium">{formatCurrency(balance.equity.available.collateral)}</span>
+                    <span className="font-medium">{formatCurrency(balance.available.collateral || 0)}</span>
                   </div>
                 </div>
               </div>
@@ -187,18 +191,18 @@ export function BalanceDisplay({ isConnected }: BalanceDisplayProps) {
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Exposure:</span>
-                    <span className="font-medium">{formatCurrency(balance.equity.utilised.exposure)}</span>
+                    <span className="font-medium">{formatCurrency(balance.utilised.exposure || 0)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">M2M Unrealised:</span>
-                    <span className={`font-medium ${balance.equity.utilised.m2m_unrealised >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {formatCurrency(balance.equity.utilised.m2m_unrealised)}
+                    <span className={`font-medium ${(balance.utilised.m2m_unrealised || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatCurrency(balance.utilised.m2m_unrealised || 0)}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">M2M Realised:</span>
-                    <span className={`font-medium ${balance.equity.utilised.m2m_realised >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {formatCurrency(balance.equity.utilised.m2m_realised)}
+                    <span className={`font-medium ${(balance.utilised.m2m_realised || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatCurrency(balance.utilised.m2m_realised || 0)}
                     </span>
                   </div>
                 </div>
@@ -208,8 +212,8 @@ export function BalanceDisplay({ isConnected }: BalanceDisplayProps) {
             {/* Account Status */}
             <div className="flex items-center justify-between pt-2 border-t">
               <span className="text-sm text-muted-foreground">Account Status:</span>
-              <Badge variant={balance.equity.enabled ? "default" : "secondary"}>
-                {balance.equity.enabled ? "Active" : "Inactive"}
+              <Badge variant={balance.enabled ? "default" : "secondary"}>
+                {balance.enabled ? "Active" : "Inactive"}
               </Badge>
             </div>
           </div>
