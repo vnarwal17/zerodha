@@ -491,7 +491,7 @@ serve(async (req) => {
           // Filter for equity instruments on NSE
           const equityInstruments = instrumentsData.filter((instrument: any) => 
             instrument.exchange === 'NSE' && instrument.instrument_type === 'EQ'
-          ).slice(0, 100); // Limit to first 100 for performance
+          ); // Return all instruments, no limit
 
           // Define NIFTY 50 and Bank NIFTY stocks
           const nifty50_stocks = ['RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'HINDUNILVR', 'ICICIBANK', 'KOTAKBANK', 'LT', 'SBIN', 'BHARTIARTL'];
