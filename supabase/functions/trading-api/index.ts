@@ -631,18 +631,76 @@ serve(async (req) => {
 
       case '/place_test_order':
         try {
+          // Get session data for access token
+          const { data: testOrderSessionData } = await supabaseClient
+            .from('trading_sessions')
+            .select('*')
+            .eq('id', 1)
+            .maybeSingle();
+
+          if (!testOrderSessionData || !testOrderSessionData.access_token) {
+            return new Response(JSON.stringify({
+              status: 'error',
+              message: 'Not authenticated. Please login first.'
+            }), {
+              status: 401,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
+          // Get credentials for API key
+          const { data: credentialsData } = await supabaseClient
+            .from('trading_credentials')
+            .select('*')
+            .eq('id', 1)
+            .maybeSingle();
+
+          if (!credentialsData) {
+            return new Response(JSON.stringify({
+              status: 'error',
+              message: 'API credentials not found'
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
           const testSymbol = requestData.test_symbol || 'SBIN';
           
-          return new Response(JSON.stringify({
-            status: 'success',
-            data: {
-              order_id: `TEST_${Date.now()}`,
-              symbol: testSymbol,
-              message: `Test order execution successful for ${testSymbol}. This is a simulated order for API testing.`
-            }
-          }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
+          // Place a real test order through Zerodha API
+          const orderData = {
+            variety: 'regular',
+            exchange: 'NSE',
+            tradingsymbol: testSymbol,
+            transaction_type: 'BUY',
+            order_type: 'MARKET',
+            quantity: 1,
+            product: 'MIS', // Intraday
+            validity: 'DAY'
+          };
+
+          const orderResponse = await makeKiteApiCall('/orders/regular', testOrderSessionData.access_token, credentialsData.api_key, 'POST', orderData);
+          
+          if (orderResponse.status === 'success') {
+            return new Response(JSON.stringify({
+              status: 'success',
+              data: {
+                order_id: orderResponse.data.order_id,
+                symbol: testSymbol,
+                message: `✅ Real test order placed successfully on Zerodha! Order ID: ${orderResponse.data.order_id}`
+              }
+            }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          } else {
+            return new Response(JSON.stringify({
+              status: 'error',
+              message: `Test order failed: ${orderResponse.message || 'Unknown error from Zerodha API'}`
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
         } catch (error) {
           return new Response(JSON.stringify({
             status: 'error',
