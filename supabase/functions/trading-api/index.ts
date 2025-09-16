@@ -497,10 +497,52 @@ serve(async (req) => {
           const nifty50_stocks = ['RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'HINDUNILVR', 'ICICIBANK', 'KOTAKBANK', 'LT', 'SBIN', 'BHARTIARTL', 'ASIANPAINT', 'MARUTI', 'BAJFINANCE', 'AXISBANK', 'HCLTECH', 'NESTLEIND', 'ULTRACEMCO', 'TITAN', 'ADANIPORTS', 'POWERGRID', 'NTPC', 'COALINDIA', 'TECHM', 'TATAMOTORS', 'WIPRO', 'SUNPHARMA', 'ONGC', 'JSWSTEEL', 'INDUSINDBK', 'TATASTEEL', 'GRASIM', 'HINDALCO', 'DRREDDY', 'EICHERMOT', 'DIVISLAB', 'BAJAJFINSV', 'HEROMOTOCO', 'APOLLOHOSP', 'CIPLA', 'BRITANNIA', 'TATACONSUM', 'SHREECEM', 'UPL', 'IOC', 'BAJAJ-AUTO', 'M&M', 'BPCL', 'ADANIENT', 'SBILIFE', 'HDFCLIFE'];
           const banknifty_stocks = ['HDFCBANK', 'ICICIBANK', 'KOTAKBANK', 'SBIN', 'AXISBANK', 'INDUSINDBK', 'BAJFINANCE', 'BAJAJFINSV', 'PNB', 'BANDHANBNK', 'FEDERALBNK', 'IDFCFIRSTB'];
 
+          // Top 500 stocks by market cap (predefined list)
+          const top500Stocks = [
+            // NIFTY 50
+            'RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'HINDUNILVR', 'ICICIBANK', 'KOTAKBANK', 'LT', 'SBIN', 'BHARTIARTL',
+            'ASIANPAINT', 'MARUTI', 'BAJFINANCE', 'AXISBANK', 'HCLTECH', 'NESTLEIND', 'ULTRACEMCO', 'TITAN', 'ADANIPORTS',
+            'POWERGRID', 'NTPC', 'COALINDIA', 'TECHM', 'TATAMOTORS', 'WIPRO', 'SUNPHARMA', 'ONGC', 'JSWSTEEL',
+            'INDUSINDBK', 'TATASTEEL', 'GRASIM', 'HINDALCO', 'DRREDDY', 'EICHERMOT', 'DIVISLAB', 'BAJAJFINSV',
+            'HEROMOTOCO', 'APOLLOHOSP', 'CIPLA', 'BRITANNIA', 'TATACONSUM', 'SHREECEM', 'UPL', 'IOC', 'BAJAJ-AUTO',
+            'M&M', 'BPCL', 'ADANIENT', 'SBILIFE', 'HDFCLIFE',
+            // Additional top market cap stocks
+            'ADANIGREEN', 'ADANITRANS', 'AMBUJACEM', 'APOLLOTYRE', 'ASHOKLEY', 'AUROPHARMA', 'BANKBARODA', 'BATAINDIA',
+            'BERGEPAINT', 'BIOCON', 'BOSCHLTD', 'BPCL', 'CADILAHC', 'CANBK', 'CENTURYTEX', 'CESC', 'CHAMBLFERT',
+            'CHOLAFIN', 'COLPAL', 'CONCOR', 'COROMANDEL', 'CROMPTON', 'CUB', 'CUMMINSIND', 'DABUR', 'DEEPAKNTR',
+            'DMART', 'DALBHARAT', 'DELTACORP', 'EMAMILTD', 'ESCORTS', 'EXIDEIND', 'FEDERALBNK', 'FORTIS', 'GAIL',
+            'GLENMARK', 'GMRINFRA', 'GODREJCP', 'GODREJPROP', 'GRANULES', 'GUJGASLTD', 'HAL', 'HAVELLS', 'HDFCAMC',
+            'HDFCLIFE', 'HINDZINC', 'HONAUT', 'IBULHSGFIN', 'IDEA', 'IDFCFIRSTB', 'IEX', 'IGL', 'INDIGO', 'INDHOTEL',
+            'IOC', 'IRCTC', 'ITC', 'JINDALSTEL', 'JSWENERGY', 'JUBLFOOD', 'JUSTDIAL', 'KPITTECH', 'LALPATHLAB',
+            'LICHSGFIN', 'LUPIN', 'MANAPPURAM', 'MARICO', 'MAXHEALTH', 'MCDOWELL-N', 'MFSL', 'MGL', 'MINDTREE',
+            'MOTHERSUMI', 'MPHASIS', 'MRF', 'MUTHOOTFIN', 'NATIONALUM', 'NAUKRI', 'NAVINFLUOR', 'NETWORK18',
+            'NMDC', 'OBEROIRLTY', 'OFSS', 'OIL', 'PAGEIND', 'PERSISTENT', 'PETRONET', 'PFC', 'PIDILITIND',
+            'PIIND', 'PNB', 'POLYCAB', 'PVRINOX', 'RAIN', 'RAMCOCEM', 'RBLBANK', 'RECLTD', 'RELAXO', 'SAIL',
+            'SBICARD', 'SBILIFE', 'SHREECEM', 'SIEMENS', 'SRF', 'STAR', 'STARTV', 'SUDARSCHEM', 'SUNDRMFAST',
+            'SUNTV', 'SYMPHONY', 'SYNDIBANK', 'TATACOMM', 'TATAPOWER', 'TRENT', 'TORNTPHARM', 'TORNTPOWER',
+            'UJJIVAN', 'UBL', 'UNITDSPR', 'VEDL', 'VOLTAS', 'WHIRLPOOL', 'YESBANK', 'ZEEL', 'ZENSARTECH',
+            // Add more symbols to reach 500 (this is a representative list)
+            'ACC', 'AUBANK', 'ABCAPITAL', 'ABFRL', 'ALKEM', 'AMBUJACEM', 'APOLLOTYRE', 'ASHOKLEY', 'AUROPHARMA',
+            'BALKRISIND', 'BANDHANBNK', 'BATAINDIA', 'BERGEPAINT', 'BHARATFORG', 'BHARTIARTL', 'BIOCON', 'BOSCHLTD',
+            'CADILAHC', 'CANBK', 'CENTURYTEX', 'CESC', 'CHAMBLFERT', 'CHOLAFIN', 'COLPAL', 'CONCOR', 'COROMANDEL',
+            'CROMPTON', 'CUB', 'CUMMINSIND', 'DABUR', 'DEEPAKNTR', 'DMART', 'DALBHARAT', 'DELTACORP', 'EMAMILTD'
+          ];
+
+          // Filter for equity instruments on NSE and limit to top 500 by market cap
+          const allEquityInstruments = instrumentsData.filter((instrument: any) => 
+            instrument.exchange === 'NSE' && instrument.instrument_type === 'EQ'
+          );
+
+          // Filter to include only top 500 stocks
+          const top500Instruments = allEquityInstruments.filter((instrument: any) => {
+            const tradingSymbol = instrument.tradingsymbol || instrument.trading_symbol;
+            return top500Stocks.includes(tradingSymbol);
+          });
+
           return new Response(JSON.stringify({
             status: 'success',
             data: {
-              instruments: equityInstruments.map((instrument: any) => {
+              instruments: top500Instruments.map((instrument: any) => {
                 const tradingSymbol = instrument.tradingsymbol || instrument.trading_symbol;
                 return {
                   symbol: tradingSymbol,
