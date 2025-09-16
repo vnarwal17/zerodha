@@ -12,6 +12,7 @@ import { MarketStatus } from "@/components/trading/MarketStatus";
 import { TradingLogs } from "@/components/trading/TradingLogs";
 import { PerformanceMetrics } from "@/components/trading/PerformanceMetrics";
 import { StrategyMonitor } from "@/components/trading/StrategyMonitor";
+import { OrderMonitor } from "@/components/trading/OrderMonitor";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { tradingApi, TradingSymbol, LiveStatus } from "@/services/trading-api";
 import { useToast } from "@/hooks/use-toast";
@@ -230,11 +231,12 @@ const Index = () => {
 
       <main className="container mx-auto px-6 py-6 space-y-6">
         <Tabs defaultValue="setup" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="setup">Setup</TabsTrigger>
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="positions">Positions</TabsTrigger>
             <TabsTrigger value="performance">Performance</TabsTrigger>
+            <TabsTrigger value="orders">Orders</TabsTrigger>
             <TabsTrigger value="logs">Logs</TabsTrigger>
             <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
@@ -316,6 +318,10 @@ const Index = () => {
 
           <TabsContent value="performance" className="space-y-6">
             <PerformanceMetrics isConnected={isConnected} isTrading={isTrading} />
+          </TabsContent>
+
+          <TabsContent value="orders" className="space-y-6">
+            <OrderMonitor isLiveTrading={isTrading} />
           </TabsContent>
 
           <TabsContent value="logs" className="space-y-6">
