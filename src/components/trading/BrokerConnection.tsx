@@ -164,19 +164,47 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
           title: "Connected Successfully! 🎉",
           description: `Welcome ${response.data.user_name || response.data.user_id}`,
         });
-      } else {
+      } else if (response.status === 'error') {
         console.error('Token login failed:', response);
+        
+        // Provide specific error messages based on the error
+        let errorMessage = response.message || "Authentication failed";
+        if (errorMessage.includes("api_key") || errorMessage.includes("access_token")) {
+          errorMessage = "Invalid or expired token. Please get a new token from Zerodha login.";
+        } else if (errorMessage.includes("request_token")) {
+          errorMessage = "Invalid request token format. Please copy the exact token from the URL.";
+        }
+        
         toast({
           title: "Authentication Failed",
-          description: response.message || "Invalid request token. Please try again.",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        
+        // Clear the token so user can try again
+        setRequestToken("");
+      } else {
+        console.error('Unexpected response:', response);
+        toast({
+          title: "Unexpected Response",
+          description: response.message || "Unexpected response from server. Please try again.",
           variant: "destructive",
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Token connection failed:', error);
+      
+      // Provide more specific error handling
+      let errorMessage = "Failed to authenticate. Please try again.";
+      if (error.message?.includes('fetch') || error.name === 'TypeError') {
+        errorMessage = "Network error. Please check your connection and try again.";
+      } else if (error.message?.includes('timeout')) {
+        errorMessage = "Connection timeout. Please try again.";
+      }
+      
       toast({
         title: "Connection Error",
-        description: "Failed to authenticate. Please check your token and try again.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
