@@ -324,30 +324,30 @@ serve(async (req) => {
         }
 
       case '/live_status':
-        // Get session data
-        const { data: liveStatusSessionData } = await supabaseClient
-          .from('trading_sessions')
-          .select('*')
-          .eq('id', 1)
-          .maybeSingle();
-
-        if (!liveStatusSessionData || !liveStatusSessionData.access_token) {
-          return new Response(JSON.stringify({
-            status: 'success',
-            data: {
-              live_status: {
-                is_trading: false,
-                market_open: false,
-                active_positions: [],
-                strategy_logs: []
-              }
-            }
-          }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
-
         try {
+          // Get session data
+          const { data: liveStatusSessionData } = await supabaseClient
+            .from('trading_sessions')
+            .select('*')
+            .eq('id', 1)
+            .maybeSingle();
+
+          if (!liveStatusSessionData || !liveStatusSessionData.access_token) {
+            return new Response(JSON.stringify({
+              status: 'success',
+              data: {
+                live_status: {
+                  is_trading: false,
+                  market_open: false,
+                  active_positions: [],
+                  strategy_logs: []
+                }
+              }
+            }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
           // Get credentials for API key
           const { data: credentialsData } = await supabaseClient
             .from('trading_credentials')
@@ -360,7 +360,7 @@ serve(async (req) => {
               status: 'success',
               data: {
                 live_status: {
-                  is_trading: false,
+                  is_trading: liveStatusSessionData.trading_active || false,
                   market_open: false,
                   active_positions: [],
                   strategy_logs: [],
@@ -372,19 +372,31 @@ serve(async (req) => {
             });
           }
 
-          // Fetch real positions data from Zerodha API
-          const positionsData = await makeKiteApiCall('/portfolio/positions', liveStatusSessionData.access_token, credentialsData.api_key);
+          // Try to fetch market and position data, but don't fail the entire request if they fail
+          let marketOpen = false;
+          let positions = [];
           
-          // Check market status
-          const marketData = await makeKiteApiCall('/market/status', liveStatusSessionData.access_token, credentialsData.api_key);
+          try {
+            const marketData = await makeKiteApiCall('/market/status', liveStatusSessionData.access_token, credentialsData.api_key);
+            marketOpen = marketData.data?.some((market: any) => market.status === 'open') || false;
+          } catch (e) {
+            console.log('Market status fetch failed:', e.message);
+          }
+
+          try {
+            const positionsData = await makeKiteApiCall('/portfolio/positions', liveStatusSessionData.access_token, credentialsData.api_key);
+            positions = positionsData.data?.net || [];
+          } catch (e) {
+            console.log('Positions fetch failed:', e.message);
+          }
           
           return new Response(JSON.stringify({
             status: 'success',
             data: {
               live_status: {
                 is_trading: liveStatusSessionData.trading_active || false,
-                market_open: marketData.data?.some((market: any) => market.status === 'open') || false,
-                active_positions: positionsData.data?.net || [],
+                market_open: marketOpen,
+                active_positions: positions,
                 strategy_logs: []
               }
             }
@@ -393,18 +405,12 @@ serve(async (req) => {
           });
 
         } catch (error) {
+          console.error('Live status error:', error);
           return new Response(JSON.stringify({
-            status: 'success',
-            data: {
-              live_status: {
-                is_trading: false,
-                market_open: false,
-                active_positions: [],
-                strategy_logs: [],
-                error: `Failed to fetch live status: ${error.message}`
-              }
-            }
+            status: 'error',
+            message: `Live status error: ${error.message}`
           }), {
+            status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
@@ -596,21 +602,102 @@ serve(async (req) => {
         }
 
       case '/start_live_trading':
-        return new Response(JSON.stringify({
-          status: 'success',
-          message: 'Live trading started successfully',
-          data: { symbols: requestData.symbols || [] }
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+        try {
+          const { symbols } = requestData;
+          
+          if (!symbols || !Array.isArray(symbols) || symbols.length === 0) {
+            return new Response(JSON.stringify({
+              status: 'error',
+              message: 'Symbols array is required'
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
+          // Update trading session to mark as active
+          const { error: updateError } = await supabaseClient
+            .from('trading_sessions')
+            .update({ 
+              trading_active: true, 
+              trading_symbols: symbols,
+              updated_at: new Date().toISOString() 
+            })
+            .eq('id', 1);
+
+          if (updateError) {
+            console.error('Failed to update trading session:', updateError);
+            return new Response(JSON.stringify({
+              status: 'error',
+              message: 'Failed to start live trading'
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
+          console.log(`🚀 Live trading started for ${symbols.length} symbols:`, symbols.map(s => s.symbol).join(', '));
+          
+          return new Response(JSON.stringify({
+            status: 'success',
+            message: `Live trading started successfully for ${symbols.length} symbols`,
+            data: { symbols, is_trading: true }
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        } catch (error) {
+          console.error('Start trading error:', error);
+          return new Response(JSON.stringify({
+            status: 'error',
+            message: `Failed to start trading: ${error.message}`
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
 
       case '/stop_live_trading':
-        return new Response(JSON.stringify({
-          status: 'success',
-          message: 'Live trading stopped successfully'
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+        try {
+          // Update trading session to mark as inactive
+          const { error: updateError } = await supabaseClient
+            .from('trading_sessions')
+            .update({ 
+              trading_active: false, 
+              trading_symbols: null,
+              updated_at: new Date().toISOString() 
+            })
+            .eq('id', 1);
+
+          if (updateError) {
+            console.error('Failed to update trading session:', updateError);
+            return new Response(JSON.stringify({
+              status: 'error',
+              message: 'Failed to stop live trading'
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
+          console.log('🛑 Live trading stopped');
+          
+          return new Response(JSON.stringify({
+            status: 'success',
+            message: 'Live trading stopped successfully',
+            data: { is_trading: false }
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        } catch (error) {
+          console.error('Stop trading error:', error);
+          return new Response(JSON.stringify({
+            status: 'error',
+            message: `Failed to stop trading: ${error.message}`
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
 
       case '/update_settings':
         return new Response(JSON.stringify({

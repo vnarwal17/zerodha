@@ -48,25 +48,36 @@ const Index = () => {
     checkInitialStatus();
   }, []);
 
-  // Real-time status updates
+  // Real-time status updates - CRITICAL: Keep monitoring active during trading
   useEffect(() => {
     if (isTrading) {
+      console.log('🚀 Starting continuous trading monitoring...');
+      
       const interval = setInterval(async () => {
         try {
           const response = await tradingApi.getLiveStatus();
           if (response.status === 'success' && response.data) {
-            setLiveStatus(response.data.live_status);
+            const newLiveStatus = response.data.live_status;
+            setLiveStatus(newLiveStatus);
+            
+            // CRITICAL: Ensure trading state stays consistent with backend
+            if (newLiveStatus && newLiveStatus.is_trading !== isTrading) {
+              console.log(`Trading state sync: Frontend=${isTrading}, Backend=${newLiveStatus.is_trading}`);
+              setIsTrading(newLiveStatus.is_trading);
+            }
           }
         } catch (error) {
           console.error('Failed to fetch live status:', error);
+          // Don't stop trading on temporary network errors
         }
-      }, 5000); // Update every 5 seconds
+      }, 3000); // More frequent updates during trading
 
       setRefreshInterval(interval);
       return () => {
         if (interval) clearInterval(interval);
       };
     } else {
+      console.log('🛑 Stopping trading monitoring...');
       if (refreshInterval) {
         clearInterval(refreshInterval);
         setRefreshInterval(null);
@@ -110,13 +121,14 @@ const Index = () => {
 
     try {
       if (isTrading) {
+        console.log('🛑 Stopping live trading...');
         // Stop trading
         const response = await tradingApi.stopLiveTrading();
         if (response.status === 'success') {
           setIsTrading(false);
           setLiveStatus(null);
           toast({
-            title: "Trading Stopped",
+            title: "Trading Stopped ⏹️",
             description: "Live trading has been stopped successfully.",
           });
         } else {
@@ -127,13 +139,14 @@ const Index = () => {
           });
         }
       } else {
+        console.log('🚀 Starting live trading...');
         // Start trading
         const response = await tradingApi.startLiveTrading(selectedSymbols);
         if (response.status === 'success') {
           setIsTrading(true);
           toast({
-            title: "Trading Started",
-            description: `Live strategy monitoring activated for ${selectedSymbols.length} symbols.`,
+            title: "Trading Started! 🚀",
+            description: `Live strategy monitoring activated for ${selectedSymbols.length} symbols. Will continuously monitor and place trades until manually stopped.`,
           });
         } else {
           toast({
@@ -144,6 +157,7 @@ const Index = () => {
         }
       }
     } catch (error) {
+      console.error('Toggle trading error:', error);
       toast({
         title: "Trading Operation Failed",
         description: "Failed to communicate with trading engine",
