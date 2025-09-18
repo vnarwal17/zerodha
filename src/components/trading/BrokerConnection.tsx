@@ -35,6 +35,10 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
 
   useEffect(() => {
     checkConnection();
+    // Check if credentials are already set
+    if (apiKey && apiSecret) {
+      setCredentialsSet(true);
+    }
   }, []);
 
   const checkConnection = async () => {
@@ -56,39 +60,68 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
   };
 
   const handleConnectClick = async () => {
+    if (!credentialsSet) {
+      toast({
+        title: "Credentials Required",
+        description: "Please set up your API credentials first",
+        variant: "destructive",
+      });
+      setShowCredentialsSetup(true);
+      return;
+    }
+
     setLoading(true);
     try {
+      console.log('Initiating connection...');
       const response = await tradingApi.login();
       console.log('Login response:', response);
       
       if (response.status === 'requires_login' && response.data?.login_url) {
         setLoginUrl(response.data.login_url);
         setShowConnectionModal(true);
+        setLoading(false); // Reset loading immediately when showing modal
         toast({
           title: "Authentication Required",
           description: "Please complete Zerodha login in the modal",
         });
-      } else if (response.status === 'success') {
+      } else if (response.status === 'success' && response.data) {
         setUserInfo(response.data);
         onConnectionChange(true, response.data);
         toast({
           title: "Already Connected",
           description: "You are already connected to Zerodha",
         });
+      } else if (response.status === 'error') {
+        toast({
+          title: "Connection Error",
+          description: response.message || "Failed to connect to broker",
+          variant: "destructive",
+        });
       } else {
         toast({
-          title: "Error",
-          description: response.message || "Failed to initiate login",
+          title: "Unexpected Response",
+          description: response.message || "Unexpected response from server",
           variant: "destructive",
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Connection failed:', error);
-      toast({
-        title: "Connection Error", 
-        description: "Failed to connect to trading backend. Please try again.",
-        variant: "destructive",
-      });
+      
+      // Check if it's a network error
+      if (error.message?.includes('fetch') || error.name === 'TypeError') {
+        toast({
+          title: "Backend Connection Error", 
+          description: "Cannot connect to trading backend. Please check if the backend server is running.",
+          variant: "destructive",
+        });
+        setShowBackendError(true);
+      } else {
+        toast({
+          title: "Connection Error", 
+          description: "Failed to connect to trading backend. Please try again.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setLoading(false);
     }
