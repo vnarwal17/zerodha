@@ -252,7 +252,7 @@ class TradingApiService {
   }
 
   // Export
-  async getActivityLogs(limit: number = 100, eventType?: string): Promise<ApiResponse<{ logs: any[]; count: number }>> {
+  async getActivityLogs(limit?: number, eventType?: string): Promise<ApiResponse<{ logs: any[]; count: number }>> {
     return this.callEdgeFunction('/get_activity_logs', { limit, event_type: eventType });
   }
 

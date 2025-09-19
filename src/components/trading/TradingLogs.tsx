@@ -55,7 +55,7 @@ export function TradingLogs({
     setIsLoading(true);
     try {
       const response = await tradingApi.getActivityLogs(
-        100, 
+        undefined, // Remove limit to get all logs
         selectedEventType === "all" ? undefined : selectedEventType
       );
       

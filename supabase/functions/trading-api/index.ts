@@ -725,14 +725,40 @@ serve(async (req) => {
         });
 
       case '/get_activity_logs':
+        const { limit, event_type } = requestData;
+        
+        let query = supabaseClient
+          .from('activity_logs')
+          .select('*')
+          .order('created_at', { ascending: false });
+        
+        // Only apply limit if specified, otherwise get all logs
+        if (limit && limit > 0) {
+          query = query.limit(limit);
+        }
+        
+        // Filter by event type if specified
+        if (event_type && event_type !== 'all') {
+          query = query.eq('event_type', event_type);
+        }
+        
+        const { data: activityLogs, error: logsError } = await query;
+        
+        if (logsError) {
+          return new Response(JSON.stringify({
+            status: 'error',
+            message: logsError.message
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        
         return new Response(JSON.stringify({
           status: 'success',
           data: {
-            logs: [
-              { timestamp: new Date().toISOString(), message: 'Trading session started', level: 'info' },
-              { timestamp: new Date().toISOString(), message: 'Connected to broker', level: 'success' }
-            ],
-            count: 2
+            logs: activityLogs || [],
+            count: activityLogs?.length || 0
           }
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
