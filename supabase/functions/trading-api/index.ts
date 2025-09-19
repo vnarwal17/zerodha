@@ -379,12 +379,15 @@ serve(async (req) => {
               .from('activity_logs')
               .insert({
                 event_type: 'SYSTEM',
-              event_name: 'LIVE_STATUS_CHECK',
-              symbol: null,
-              message: 'Retrieving live trading status and market data',
-              severity: 'info',
-              metadata: { timestamp: new Date().toISOString() }
-            });
+                event_name: 'LIVE_STATUS_CHECK',
+                symbol: null,
+                message: 'Retrieving live trading status and market data',
+                severity: 'info',
+                metadata: { timestamp: new Date().toISOString() }
+              });
+          } catch (logError) {
+            console.warn('Failed to log live status check:', logError);
+          }
 
           // Get session data with error handling
           let liveStatusSessionData = null;
