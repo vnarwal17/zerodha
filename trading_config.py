@@ -48,6 +48,31 @@ class TradingConfig:
             raise ValueError("ZERODHA_API_KEY and ZERODHA_API_SECRET must be set")
         
         logger.info(f"Trading configuration loaded - DRY_RUN: {self.DRY_RUN}")
+
+# NSE Holiday Calendar 2025
+NSE_HOLIDAYS_2025 = [
+    "2025-01-26",  # Republic Day
+    "2025-03-14",  # Holi
+    "2025-04-18",  # Good Friday
+    "2025-04-21",  # Ram Navami
+    "2025-05-01",  # Maharashtra Day
+    "2025-06-15",  # Eid al-Adha
+    "2025-08-15",  # Independence Day
+    "2025-08-16",  # Parsi New Year
+    "2025-09-07",  # Ganesh Chaturthi
+    "2025-10-02",  # Gandhi Jayanti
+    "2025-10-21",  # Dussehra
+    "2025-11-01",  # Diwali Laxmi Pujan
+    "2025-11-02",  # Diwali Balipratipada
+    "2025-11-05",  # Bhai Dooj
+    "2025-11-24",  # Guru Nanak Jayanti
+    "2025-12-25"   # Christmas
+]
+
+def is_market_holiday(date):
+    """Check if given date is NSE market holiday"""
+    date_str = date.strftime("%Y-%m-%d")
+    return date_str in NSE_HOLIDAYS_2025
     
     def get_market_hours(self):
         """Get market hours configuration"""

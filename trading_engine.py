@@ -11,6 +11,8 @@ from risk_manager import RiskManager
 from instrument_manager import InstrumentManager
 from trading_config import TradingConfig
 from trading_logger import trading_logger
+from websocket_manager import WebSocketManager
+from connection_monitor import ConnectionMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,11 @@ class ImprovedTradingEngine:
         )
         self.instrument_manager = InstrumentManager()
         self.instrument_manager.set_zerodha_client(zerodha_client)
+        
+        # WebSocket for real-time data
+        self.websocket_manager = None
+        self.current_prices: Dict[str, float] = {}
+        self.connection_monitor = None
         
         # Market timing
         self.MARKET_OPEN = time(self.config.MARKET_OPEN_HOUR, self.config.MARKET_OPEN_MINUTE)
@@ -65,20 +72,107 @@ class ImprovedTradingEngine:
         # This should be enhanced with actual NSE holiday calendar
         return False
 
-    async def start_trading(self, symbols: List[TradingSymbol]):
-        """Start live trading with comprehensive validation"""
+    async def setup_websocket_streaming(self, symbols: List[str]):
+        """Setup WebSocket streaming for real-time data"""
         try:
-            # Validate market hours
+            if not self.zerodha.access_token:
+                raise TradingBotException("No access token for WebSocket", "NO_TOKEN")
+                
+            self.websocket_manager = WebSocketManager(
+                self.zerodha.api_key, 
+                self.zerodha.access_token
+            )
+            
+            # Get instrument tokens for symbols
+            tokens = []
+            for symbol in symbols:
+                try:
+                    token = self.instrument_manager.get_instrument_token(symbol)
+                    tokens.append(token)
+                except Exception as e:
+                    logger.warning(f"Could not get token for {symbol}: {e}")
+                    
+            # Set up tick callback
+            self.websocket_manager.set_tick_callback(self.process_tick_data)
+            
+            # Connect and subscribe
+            await self.websocket_manager.connect()
+            await asyncio.sleep(2)  # Allow connection to establish
+            self.websocket_manager.subscribe(tokens)
+            
+            logger.info(f"WebSocket streaming setup for {len(tokens)} symbols")
+            
+        except Exception as e:
+            logger.error(f"WebSocket setup error: {e}")
+            raise
+
+    def process_tick_data(self, tick):
+        """Process incoming tick data for strategy signals"""
+        try:
+            instrument_token = tick['instrument_token']
+            last_price = tick['last_price']
+            
+            # Find symbol for this token
+            symbol = self.get_symbol_from_token(instrument_token)
+            if not symbol:
+                return
+                
+            # Update current price
+            self.current_prices[symbol] = last_price
+            
+            # Check if this symbol has an active strategy
+            if symbol in self.strategy_states:
+                # Create candle data from tick (simplified)
+                candle_data = self.create_candle_from_tick(tick)
+                
+                # Process strategy for this symbol
+                asyncio.create_task(
+                    self._process_symbol_strategy(symbol, self.strategy_states[symbol])
+                )
+                
+        except Exception as e:
+            logger.error(f"Tick processing error: {e}")
+
+    def get_symbol_from_token(self, instrument_token: int) -> Optional[str]:
+        """Get symbol name from instrument token"""
+        for symbol, state in self.strategy_states.items():
+            try:
+                if self.instrument_manager.get_instrument_token(symbol) == instrument_token:
+                    return symbol
+            except:
+                continue
+        return None
+
+    def create_candle_from_tick(self, tick) -> CandleData:
+        """Create candle data from tick (simplified for real-time processing)"""
+        return CandleData(
+            timestamp=datetime.now(),
+            open=tick.get('ohlc', {}).get('open', tick['last_price']),
+            high=tick.get('ohlc', {}).get('high', tick['last_price']),
+            low=tick.get('ohlc', {}).get('low', tick['last_price']),
+            close=tick['last_price'],
+            volume=tick.get('volume', 0)
+        )
+
+    async def start_trading(self, symbols: List[TradingSymbol]):
+        """Enhanced start trading with all safety features"""
+        try:
+            # Pre-flight checks
             if not self.is_market_open():
                 raise TradingBotException("Market is closed", "MARKET_CLOSED")
                 
-            # Validate session
             await self.zerodha.refresh_session_if_needed()
-            
-            # Update instruments
             await self.instrument_manager.update_instruments_daily()
             
-            self.is_running = True
+            # Initialize connection monitoring
+            self.connection_monitor = ConnectionMonitor(self.zerodha)
+            
+            # Start monitoring in background
+            asyncio.create_task(self.connection_monitor.start_monitoring())
+            
+            # Setup WebSocket for real-time data
+            symbol_names = [s.symbol for s in symbols]
+            await self.setup_websocket_streaming(symbol_names)
             
             # Initialize strategy states
             for symbol in symbols:
@@ -99,7 +193,7 @@ class ImprovedTradingEngine:
             asyncio.create_task(self._trading_loop())
             
         except Exception as e:
-            trading_logger.log_error("START_TRADING_ERROR", str(e), {"symbols": symbols})
+            trading_logger.log_error("TRADING_START_ERROR", str(e), {"symbols": symbol_names})
             raise
     
     async def stop_trading(self):
@@ -107,39 +201,52 @@ class ImprovedTradingEngine:
         self.is_running = False
         self._log("SYSTEM", "Trading stopped", "All monitoring stopped")
     
-    async def _trading_loop(self):
-        """Enhanced main trading loop with comprehensive error handling"""
+    async def _enhanced_trading_loop(self):
+        """Enhanced trading loop with comprehensive error handling"""
         while self.is_running:
             try:
-                current_time = datetime.now(timezone(timedelta(hours=5, minutes=30)))  # IST
-                current_time_only = current_time.time()
+                current_time = datetime.now().time()
                 
-                # Only trade during market hours
-                if self.MARKET_OPEN <= current_time_only <= self.MARKET_CLOSE:
-                    await self.error_handler.handle_api_call(self._process_all_symbols)
-                
-                # Auto square-off warning at 3:00 PM
-                if current_time_only >= self.FORCE_EXIT_TIME:
+                # Check market hours
+                if not self.is_market_open():
+                    logger.info("Market closed, stopping trading")
+                    break
+                    
+                # Check for force exit
+                if current_time >= self.FORCE_EXIT_TIME:
                     await self._force_exit_all_positions()
+                    break
+                    
+                # Process strategy for all symbols
+                await self._process_all_symbols()
                 
-                # Final square-off before MIS auto square-off
-                if current_time_only >= self.AUTO_SQUAREOFF_EQUITY:
-                    await self._emergency_exit_all_positions()
-                
-                # Check session validity every hour
-                if current_time.minute == 0:
-                    await self.zerodha.refresh_session_if_needed()
-                
-                # Wait before next iteration (3 minutes for candle close)
-                await asyncio.sleep(180)
+                # Brief pause to prevent excessive CPU usage
+                await asyncio.sleep(1)
                 
             except Exception as e:
-                trading_logger.log_error("TRADING_LOOP_ERROR", str(e), {
-                    "time": datetime.now().isoformat(),
-                    "is_running": self.is_running
-                })
                 logger.error(f"Trading loop error: {e}")
-                await asyncio.sleep(60)  # Wait 1 minute on error
+                trading_logger.log_error("TRADING_LOOP_ERROR", str(e), {})
+                await asyncio.sleep(30)  # Wait before retrying
+                
+        # Cleanup
+        await self._cleanup_trading_session()
+
+    async def _cleanup_trading_session(self):
+        """Cleanup resources after trading session"""
+        try:
+            if self.connection_monitor:
+                self.connection_monitor.stop_monitoring()
+                
+            if self.websocket_manager:
+                self.websocket_manager.disconnect()
+                
+            trading_logger.log_system_event("TRADING_STOPPED", {
+                "positions_count": len([p for p in self.positions if p.status == "ACTIVE"]),
+                "total_pnl": sum(p.realized_pnl for p in self.positions)
+            })
+            
+        except Exception as e:
+            logger.error(f"Cleanup error: {e}")
     
     async def _process_all_symbols(self):
         """Process all symbols for strategy signals"""
@@ -387,65 +494,92 @@ class ImprovedTradingEngine:
             raise
     
     async def _monitor_position(self, symbol: str, state: StrategyState, candle: CandleData):
-        """Monitor active position for exit conditions"""
-        # Find the active position
+        """Enhanced position monitoring with actual exit orders"""
         position = next((p for p in self.positions if p.symbol == symbol and p.status == "ACTIVE"), None)
         if not position:
             return
         
-        # Update current price
+        # Update current price and P&L
         position.current_price = candle.close
-        
-        # Calculate unrealized P&L
         if position.direction == "long":
             position.unrealized_pnl = (candle.close - position.entry_price) * position.quantity
         else:
             position.unrealized_pnl = (position.entry_price - candle.close) * position.quantity
         
-        # Check for stop loss
-        if ((position.direction == "long" and candle.low <= position.stop_loss) or
-            (position.direction == "short" and candle.high >= position.stop_loss)):
-            await self._exit_position(position, position.stop_loss, "STOP_LOSS")
-            state.trade_completed = True
+        # Check for stop loss hit
+        stop_loss_hit = (
+            (position.direction == "long" and candle.low <= position.stop_loss) or
+            (position.direction == "short" and candle.high >= position.stop_loss)
+        )
         
-        # Check for target
-        elif ((position.direction == "long" and candle.high >= position.target) or
-              (position.direction == "short" and candle.low <= position.target)):
-            await self._exit_position(position, position.target, "TARGET")
-            state.trade_completed = True
+        # Check for target hit  
+        target_hit = (
+            (position.direction == "long" and candle.high >= position.target) or
+            (position.direction == "short" and candle.low <= position.target)
+        )
+        
+        # Execute exit if conditions met
+        if stop_loss_hit:
+            await self._exit_position(position, "STOP_LOSS", position.stop_loss)
+        elif target_hit:
+            await self._exit_position(position, "TARGET", position.target)
     
-    async def _exit_position(self, position: Position, exit_price: float, reason: str):
-        """Exit a position"""
-        if not self.settings.dry_run:
-            # Place exit order using the exact format specification
-            exit_result = await self.zerodha.place_order(
-                symbol=position.symbol,
-                transaction_type="SELL" if position.direction == "long" else "BUY",
-                quantity=position.quantity,
-                price=exit_price
-            )
+    async def _exit_position(self, position: Position, exit_reason: str, exit_price: float):
+        """Execute position exit with actual order placement"""
+        try:
+            # Determine exit transaction type (opposite of entry)
+            exit_transaction = "SELL" if position.direction == "long" else "BUY"
             
-            if exit_result['status'] == 'success':
-                self._log(position.symbol, "EXIT_ORDER_PLACED", f"Exit order placed: {exit_result.get('order_id')}")
+            # Place exit order
+            exit_order_params = {
+                'symbol': position.symbol,
+                'transaction_type': exit_transaction,
+                'quantity': position.quantity,
+                'price': exit_price
+            }
+            
+            if not self.settings.dry_run:
+                # Place actual exit order
+                exit_result = await self.place_order_with_validation(exit_order_params)
+                
+                if exit_result['status'] == 'success':
+                    # Update position
+                    position.status = "CLOSED"
+                    position.exit_price = exit_price
+                    position.realized_pnl = position.unrealized_pnl
+                    position.exit_time = datetime.now().isoformat()
+                    
+                    # Update risk manager
+                    self.risk_manager.update_pnl(position.realized_pnl)
+                    self.risk_manager.remove_position()
+                    
+                    # Update strategy state
+                    state = self.strategy_states[position.symbol]
+                    state.is_position_active = False
+                    state.trade_completed = True
+                    
+                    trading_logger.log_position_event(position.symbol, "POSITION_CLOSED", {
+                        "exit_reason": exit_reason,
+                        "exit_price": exit_price,
+                        "realized_pnl": position.realized_pnl,
+                        "order_id": exit_result.get('order_id')
+                    })
+                    
+                    self._log(position.symbol, "POSITION_EXITED", 
+                             f"{exit_reason}: {exit_transaction} @ {exit_price:.2f}, P&L: {position.realized_pnl:.2f}")
+                else:
+                    logger.error(f"Exit order failed for {position.symbol}: {exit_result.get('message')}")
             else:
-                self._log(position.symbol, "EXIT_ORDER_FAILED", f"Exit order failed: {exit_result.get('message')}")
-        else:
-            self._log(position.symbol, "DRY_RUN", f"DRY RUN: Would exit {position.direction.upper()} @ {exit_price:.2f}")
-        
-        # Update position
-        position.status = "CLOSED"
-        position.current_price = exit_price
-        position.exit_time = datetime.now().isoformat()
-        position.exit_reason = reason
-        
-        # Calculate final P&L
-        if position.direction == "long":
-            position.unrealized_pnl = (exit_price - position.entry_price) * position.quantity
-        else:
-            position.unrealized_pnl = (position.entry_price - exit_price) * position.quantity
-        
-        self._log(position.symbol, "POSITION_CLOSED", 
-                 f"Position closed @ {exit_price:.2f} ({reason}). P&L: ₹{position.unrealized_pnl:.2f}")
+                self._log(position.symbol, "DRY_RUN_EXIT", 
+                         f"DRY RUN: Would exit {position.direction} @ {exit_price:.2f} due to {exit_reason}")
+                
+        except Exception as e:
+            trading_logger.log_error("POSITION_EXIT_ERROR", str(e), {
+                "symbol": position.symbol,
+                "exit_reason": exit_reason,
+                "exit_price": exit_price
+            })
+            logger.error(f"Position exit error for {position.symbol}: {e}")
     
     async def _force_exit_all_positions(self):
         """Force exit all positions at market close"""

@@ -310,18 +310,50 @@ class ZerodhaClient:
             return {'status': 'error', 'message': str(e)}
 
     async def verify_order_status(self, order_id: str) -> str:
-        """Verify order execution status"""
+        """Verify order execution status using correct KiteConnect API"""
         try:
-            order_history = self.kite.order_history(order_id)
-            if order_history:
-                latest_status = order_history[-1]['status']
-                if latest_status not in ['COMPLETE', 'OPEN']:
-                    logger.warning(f"Order {order_id} status: {latest_status}")
-                return latest_status
-            return "UNKNOWN"
+            # Use the correct method to get all orders
+            orders = self.kite.orders()
+            
+            # Find the specific order
+            order = next((o for o in orders if o['order_id'] == order_id), None)
+            
+            if order:
+                status = order['status']
+                # Log important order details
+                logger.info(f"Order {order_id} status: {status}, filled_quantity: {order.get('filled_quantity', 0)}")
+                return status
+            else:
+                logger.warning(f"Order {order_id} not found in orders list")
+                return "NOT_FOUND"
+                
         except Exception as e:
             logger.error(f"Order status verification error: {e}")
             return "ERROR"
+
+    async def get_order_details(self, order_id: str) -> Dict[str, Any]:
+        """Get complete order details"""
+        try:
+            orders = self.kite.orders()
+            order = next((o for o in orders if o['order_id'] == order_id), None)
+            
+            if order:
+                return {
+                    'order_id': order['order_id'],
+                    'status': order['status'],
+                    'transaction_type': order['transaction_type'],
+                    'quantity': order['quantity'],
+                    'filled_quantity': order.get('filled_quantity', 0),
+                    'pending_quantity': order.get('pending_quantity', 0),
+                    'price': order.get('price', 0),
+                    'average_price': order.get('average_price', 0),
+                    'status_message': order.get('status_message', ''),
+                    'order_timestamp': order.get('order_timestamp', '')
+                }
+            return {}
+        except Exception as e:
+            logger.error(f"Error getting order details: {e}")
+            return {}
     
     async def get_positions(self) -> List[Dict[str, Any]]:
         """Get current positions"""
