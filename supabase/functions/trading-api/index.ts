@@ -325,6 +325,18 @@ serve(async (req) => {
 
       case '/live_status':
         try {
+          // Log the status check
+          await supabaseClient
+            .from('activity_logs')
+            .insert({
+              event_type: 'SYSTEM',
+              event_name: 'LIVE_STATUS_CHECK',
+              symbol: null,
+              message: 'Retrieving live trading status and market data',
+              severity: 'info',
+              metadata: { timestamp: new Date().toISOString() }
+            });
+
           // Get session data
           const { data: liveStatusSessionData } = await supabaseClient
             .from('trading_sessions')
@@ -333,6 +345,17 @@ serve(async (req) => {
             .maybeSingle();
 
           if (!liveStatusSessionData || !liveStatusSessionData.access_token) {
+            await supabaseClient
+              .from('activity_logs')
+              .insert({
+                event_type: 'SYSTEM',
+                event_name: 'SESSION_STATUS',
+                symbol: null,
+                message: 'Trading session not authenticated - offline mode',
+                severity: 'warning',
+                metadata: { authenticated: false }
+              });
+
             return new Response(JSON.stringify({
               status: 'success',
               data: {
@@ -356,6 +379,17 @@ serve(async (req) => {
             .maybeSingle();
 
           if (!credentialsData) {
+            await supabaseClient
+              .from('activity_logs')
+              .insert({
+                event_type: 'SYSTEM',
+                event_name: 'CREDENTIALS_ERROR',
+                symbol: null,
+                message: 'Trading credentials not found in database',
+                severity: 'error',
+                metadata: { issue: 'missing_credentials' }
+              });
+
             return new Response(JSON.stringify({
               status: 'success',
               data: {
@@ -379,22 +413,88 @@ serve(async (req) => {
           try {
             const marketData = await makeKiteApiCall('/market/status', liveStatusSessionData.access_token, credentialsData.api_key);
             marketOpen = marketData.data?.some((market: any) => market.status === 'open') || false;
+            
+            await supabaseClient
+              .from('activity_logs')
+              .insert({
+                event_type: 'MARKET',
+                event_name: 'MARKET_STATUS',
+                symbol: null,
+                message: `Market status: ${marketOpen ? 'OPEN - Trading active' : 'CLOSED - After hours'}`,
+                severity: 'info',
+                metadata: { market_open: marketOpen, raw_data: marketData.data }
+              });
           } catch (e) {
             console.log('Market status fetch failed:', e.message);
+            await supabaseClient
+              .from('activity_logs')
+              .insert({
+                event_type: 'MARKET',
+                event_name: 'MARKET_ERROR',
+                symbol: null,
+                message: `Failed to fetch market status: ${e.message}`,
+                severity: 'error',
+                metadata: { error: e.message }
+              });
           }
 
           try {
             const positionsData = await makeKiteApiCall('/portfolio/positions', liveStatusSessionData.access_token, credentialsData.api_key);
             positions = positionsData.data?.net || [];
+            
+            const activePositions = positions.filter((pos: any) => pos.quantity !== 0);
+            await supabaseClient
+              .from('activity_logs')
+              .insert({
+                event_type: 'POSITION',
+                event_name: 'POSITION_UPDATE',
+                symbol: null,
+                message: `Portfolio status: ${activePositions.length} active positions, ${positions.length - activePositions.length} closed positions`,
+                severity: 'info',
+                metadata: { 
+                  active_count: activePositions.length,
+                  total_count: positions.length,
+                  positions: activePositions.map((p: any) => ({ symbol: p.tradingsymbol, quantity: p.quantity, pnl: p.pnl }))
+                }
+              });
           } catch (e) {
             console.log('Positions fetch failed:', e.message);
+            await supabaseClient
+              .from('activity_logs')
+              .insert({
+                event_type: 'POSITION',
+                event_name: 'POSITION_ERROR',
+                symbol: null,
+                message: `Failed to fetch positions: ${e.message}`,
+                severity: 'error',
+                metadata: { error: e.message }
+              });
           }
+
+          // Log trading status
+          const isTrading = liveStatusSessionData.trading_active || false;
+          const symbolCount = liveStatusSessionData.symbols ? JSON.parse(liveStatusSessionData.symbols).length : 0;
+          
+          await supabaseClient
+            .from('activity_logs')
+            .insert({
+              event_type: 'TRADING',
+              event_name: 'TRADING_STATUS',
+              symbol: null,
+              message: `Trading engine: ${isTrading ? `ACTIVE - Monitoring ${symbolCount} symbols` : 'INACTIVE - Strategy stopped'}`,
+              severity: isTrading ? 'success' : 'info',
+              metadata: { 
+                trading_active: isTrading,
+                symbol_count: symbolCount,
+                symbols: liveStatusSessionData.symbols ? JSON.parse(liveStatusSessionData.symbols) : []
+              }
+            });
           
           return new Response(JSON.stringify({
             status: 'success',
             data: {
               live_status: {
-                is_trading: liveStatusSessionData.trading_active || false,
+                is_trading: isTrading,
                 market_open: marketOpen,
                 active_positions: positions,
                 strategy_logs: []
@@ -406,6 +506,17 @@ serve(async (req) => {
 
         } catch (error) {
           console.error('Live status error:', error);
+          await supabaseClient
+            .from('activity_logs')
+            .insert({
+              event_type: 'SYSTEM',
+              event_name: 'STATUS_ERROR',
+              symbol: null,
+              message: `System error during status check: ${error.message}`,
+              severity: 'error',
+              metadata: { error: error.message, stack: error.stack }
+            });
+
           return new Response(JSON.stringify({
             status: 'error',
             message: `Live status error: ${error.message}`
