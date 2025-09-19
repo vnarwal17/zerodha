@@ -268,16 +268,23 @@ export function BrokerConnection({ isConnected, onConnectionChange }: BrokerConn
           description: response.data?.message || "Test order placed successfully on Zerodha",
         });
       } else {
+        const errorMsg = response.message || "Failed to place test order";
+        const isAuthError = errorMsg.includes('Not authenticated') || errorMsg.includes('login');
+        const isCredentialsError = errorMsg.includes('credentials not found');
+        
         toast({
           title: "❌ Test Order Failed",
-          description: response.message || "Failed to place test order",
+          description: isAuthError ? "Please login to Zerodha first" : 
+                      isCredentialsError ? "API credentials not set up" : 
+                      errorMsg,
           variant: "destructive",
         });
       }
     } catch (error) {
+      console.error('Test order error:', error);
       toast({
         title: "❌ Test Order Error",
-        description: "Failed to execute test order - Check connection",
+        description: `Connection error: ${error instanceof Error ? error.message : 'Unknown error'}`,
         variant: "destructive",
       });
     } finally {

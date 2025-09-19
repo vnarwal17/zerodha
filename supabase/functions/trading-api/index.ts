@@ -298,6 +298,19 @@ serve(async (req) => {
           });
         }
 
+      case '/test':
+        // Simple connectivity test - no authentication required
+        return new Response(JSON.stringify({
+          status: 'success',
+          message: 'Edge function is working',
+          data: { 
+            server_time: new Date().toISOString(),
+            status: 'connected'
+          }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+
       case '/test_connection':
         // Check if we have valid session
         const { data: sessionData } = await supabaseClient
