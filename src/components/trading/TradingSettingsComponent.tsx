@@ -15,7 +15,7 @@ interface TradingSettingsProps {
 export function TradingSettingsComponent({ isConnected }: TradingSettingsProps) {
   const [settings, setSettings] = useState<TradingSettings>({
     quantity: 2, // Default quantity
-    fixed_capital_per_trade: 100000,
+    fixed_capital_per_trade: 1000,
     risk_percent: 2,
     leverage: 1,
     position_sizing: 'fixed_capital',
@@ -71,7 +71,7 @@ export function TradingSettingsComponent({ isConnected }: TradingSettingsProps) 
   const resetToDefaults = () => {
     setSettings({
       quantity: 2,
-      fixed_capital_per_trade: 100000,
+      fixed_capital_per_trade: 1000,
       risk_percent: 2,
       leverage: 1,
       position_sizing: 'fixed_capital',
@@ -143,7 +143,7 @@ export function TradingSettingsComponent({ isConnected }: TradingSettingsProps) 
                 type="number"
                 value={settings.fixed_capital_per_trade}
                 onChange={(e) => handleSettingChange('fixed_capital_per_trade', parseInt(e.target.value) || 0)}
-                placeholder="100000"
+                placeholder="1000"
               />
               <p className="text-sm text-muted-foreground">
                 Fixed amount of capital to deploy per trade
