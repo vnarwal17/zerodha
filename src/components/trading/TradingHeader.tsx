@@ -1,7 +1,8 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Activity, Settings, Power, PowerOff, LogOut } from "lucide-react";
+import { Activity, Settings, Power, PowerOff, LogOut, TestTube } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 interface TradingHeaderProps {
   isConnected: boolean;
@@ -18,6 +19,7 @@ export function TradingHeader({
   userName = "Demo User",
   onLogout
 }: TradingHeaderProps) {
+  const navigate = useNavigate();
   return (
     <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-40">
       <div className="flex items-center justify-between px-6 py-4">
@@ -63,6 +65,15 @@ export function TradingHeader({
 
           <Button variant="ghost" size="sm">
             <Settings className="h-4 w-4" />
+          </Button>
+
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={() => navigate("/test")}
+            title="Test Page"
+          >
+            <TestTube className="h-4 w-4" />
           </Button>
           
           {onLogout && (
