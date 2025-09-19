@@ -11,51 +11,75 @@ async function generateChecksum(apiKey: string, requestToken: string, apiSecret:
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Helper function to make authenticated API calls to Zerodha
+// Helper function to make authenticated API calls to Zerodha with comprehensive error handling
 async function makeKiteApiCall(endpoint: string, accessToken: string, apiKey: string, method: string = 'GET', body?: any) {
   const url = `https://api.kite.trade${endpoint}`;
   
-  let options: RequestInit = { method };
-  
-  // For order placement, Zerodha expects form data, not JSON
-  if (endpoint.includes('/orders') && method === 'POST' && body) {
-    const formData = new URLSearchParams();
-    Object.keys(body).forEach(key => {
-      formData.append(key, body[key]);
-    });
+  try {
+    let options: RequestInit = { method };
     
-    options = {
-      method,
-      headers: {
+    // For order placement, Zerodha expects form data, not JSON
+    if (endpoint.includes('/orders') && method === 'POST' && body) {
+      const formData = new URLSearchParams();
+      Object.keys(body).forEach(key => {
+        formData.append(key, body[key]);
+      });
+      
+      options = {
+        method,
+        headers: {
+          'Authorization': `token ${apiKey}:${accessToken}`,
+          'X-Kite-Version': '3',
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: formData
+      };
+    } else {
+      // For other endpoints, use JSON
+      const headers = {
         'Authorization': `token ${apiKey}:${accessToken}`,
         'X-Kite-Version': '3',
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: formData
-    };
-  } else {
-    // For other endpoints, use JSON
-    const headers = {
-      'Authorization': `token ${apiKey}:${accessToken}`,
-      'X-Kite-Version': '3',
-      'Content-Type': 'application/json'
-    };
-    
-    options = { method, headers };
-    if (body && method !== 'GET') {
-      options.body = JSON.stringify(body);
+        'Content-Type': 'application/json'
+      };
+      
+      options = { method, headers };
+      if (body && method !== 'GET') {
+        options.body = JSON.stringify(body);
+      }
     }
-  }
 
-  const response = await fetch(url, options);
-  
-  // Special handling for instruments endpoint which returns CSV
-  if (endpoint === '/instruments') {
-    const csvText = await response.text();
-    return parseCsvToInstruments(csvText);
+    console.log(`Making Kite API call: ${method} ${url}`);
+    const response = await fetch(url, options);
+    
+    console.log(`Kite API response status: ${response.status}`);
+    
+    // Special handling for instruments endpoint which returns CSV
+    if (endpoint === '/instruments') {
+      if (!response.ok) {
+        throw new Error(`Instruments API error: ${response.status} ${response.statusText}`);
+      }
+      const csvText = await response.text();
+      return parseCsvToInstruments(csvText);
+    }
+    
+    // For all other endpoints, expect JSON
+    const responseData = await response.json();
+    
+    // Log the response for debugging
+    console.log('Kite API response data:', responseData);
+    
+    return responseData;
+    
+  } catch (error) {
+    console.error(`Kite API call failed for ${endpoint}:`, error);
+    
+    // Return a standardized error response
+    return {
+      status: 'error',
+      error_type: 'NetworkException',
+      message: error instanceof Error ? error.message : 'Unknown API error'
+    };
   }
-  
-  return await response.json();
 }
 
 // Helper function to parse CSV instruments data
@@ -84,35 +108,51 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const body = await req.text();
     let requestData: any = {};
     
-    if (body) {
-      try {
+    // Safely parse request body
+    try {
+      const body = await req.text();
+      if (body) {
         requestData = JSON.parse(body);
-      } catch (e) {
-        return new Response(JSON.stringify({
-          status: 'error',
-          message: 'Invalid JSON'
-        }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
       }
+    } catch (parseError) {
+      console.error('JSON parse error:', parseError);
+      return new Response(JSON.stringify({
+        status: 'error',
+        message: 'Invalid JSON format'
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
     const path = requestData.path || '';
+    console.log('Processing request:', path, requestData);
 
-    // Initialize Supabase client
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-    )
+    // Initialize Supabase client with error handling
+    let supabaseClient;
+    try {
+      supabaseClient = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      );
+    } catch (supabaseError) {
+      console.error('Supabase client error:', supabaseError);
+      return new Response(JSON.stringify({
+        status: 'error',
+        message: 'Database connection failed'
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
 
     switch (path) {
       case '/test':
@@ -325,11 +365,14 @@ serve(async (req) => {
 
       case '/live_status':
         try {
-          // Log the status check
-          await supabaseClient
-            .from('activity_logs')
-            .insert({
-              event_type: 'SYSTEM',
+          console.log('Live status check starting...');
+          
+          // Log the status check with error handling
+          try {
+            await supabaseClient
+              .from('activity_logs')
+              .insert({
+                event_type: 'SYSTEM',
               event_name: 'LIVE_STATUS_CHECK',
               symbol: null,
               message: 'Retrieving live trading status and market data',
@@ -337,24 +380,39 @@ serve(async (req) => {
               metadata: { timestamp: new Date().toISOString() }
             });
 
-          // Get session data
-          const { data: liveStatusSessionData } = await supabaseClient
-            .from('trading_sessions')
-            .select('*')
-            .eq('id', 1)
-            .maybeSingle();
+          // Get session data with error handling
+          let liveStatusSessionData = null;
+          try {
+            const { data: sessionResult, error: sessionError } = await supabaseClient
+              .from('trading_sessions')
+              .select('*')
+              .eq('id', 1)
+              .maybeSingle();
+            
+            if (sessionError) {
+              console.warn('Session fetch error:', sessionError);
+            } else {
+              liveStatusSessionData = sessionResult;
+            }
+          } catch (sessionFetchError) {
+            console.error('Session fetch failed:', sessionFetchError);
+          }
 
           if (!liveStatusSessionData || !liveStatusSessionData.access_token) {
-            await supabaseClient
-              .from('activity_logs')
-              .insert({
-                event_type: 'SYSTEM',
-                event_name: 'SESSION_STATUS',
-                symbol: null,
-                message: 'Trading session not authenticated - offline mode',
-                severity: 'warning',
-                metadata: { authenticated: false }
-              });
+            try {
+              await supabaseClient
+                .from('activity_logs')
+                .insert({
+                  event_type: 'SYSTEM',
+                  event_name: 'SESSION_STATUS',
+                  symbol: null,
+                  message: 'Trading session not authenticated - offline mode',
+                  severity: 'warning',
+                  metadata: { authenticated: false }
+                });
+            } catch (logError) {
+              console.warn('Failed to log session status:', logError);
+            }
 
             return new Response(JSON.stringify({
               status: 'success',
@@ -371,24 +429,39 @@ serve(async (req) => {
             });
           }
 
-          // Get credentials for API key
-          const { data: credentialsData } = await supabaseClient
-            .from('trading_credentials')
-            .select('*')
-            .eq('id', 1)
-            .maybeSingle();
+          // Get credentials for API key with error handling
+          let credentialsData = null;
+          try {
+            const { data: credResult, error: credError } = await supabaseClient
+              .from('trading_credentials')
+              .select('*')
+              .eq('id', 1)
+              .maybeSingle();
+            
+            if (credError) {
+              console.warn('Credentials fetch error:', credError);
+            } else {
+              credentialsData = credResult;
+            }
+          } catch (credFetchError) {
+            console.error('Credentials fetch failed:', credFetchError);
+          }
 
           if (!credentialsData) {
-            await supabaseClient
-              .from('activity_logs')
-              .insert({
-                event_type: 'SYSTEM',
-                event_name: 'CREDENTIALS_ERROR',
-                symbol: null,
-                message: 'Trading credentials not found in database',
-                severity: 'error',
-                metadata: { issue: 'missing_credentials' }
-              });
+            try {
+              await supabaseClient
+                .from('activity_logs')
+                .insert({
+                  event_type: 'SYSTEM',
+                  event_name: 'CREDENTIALS_ERROR',
+                  symbol: null,
+                  message: 'Trading credentials not found in database',
+                  severity: 'error',
+                  metadata: { issue: 'missing_credentials' }
+                });
+            } catch (logError) {
+              console.warn('Failed to log credentials error:', logError);
+            }
 
             return new Response(JSON.stringify({
               status: 'success',
@@ -412,63 +485,93 @@ serve(async (req) => {
           
           try {
             const marketData = await makeKiteApiCall('/market/status', liveStatusSessionData.access_token, credentialsData.api_key);
-            marketOpen = marketData.data?.some((market: any) => market.status === 'open') || false;
             
-            await supabaseClient
-              .from('activity_logs')
-              .insert({
-                event_type: 'MARKET',
-                event_name: 'MARKET_STATUS',
-                symbol: null,
-                message: `Market status: ${marketOpen ? 'OPEN - Trading active' : 'CLOSED - After hours'}`,
-                severity: 'info',
-                metadata: { market_open: marketOpen, raw_data: marketData.data }
-              });
+            // Check if the API call was successful
+            if (marketData && marketData.status !== 'error') {
+              marketOpen = marketData.data?.some((market: any) => market.status === 'open') || false;
+              
+              try {
+                await supabaseClient
+                  .from('activity_logs')
+                  .insert({
+                    event_type: 'MARKET',
+                    event_name: 'MARKET_STATUS',
+                    symbol: null,
+                    message: `Market status: ${marketOpen ? 'OPEN - Trading active' : 'CLOSED - After hours'}`,
+                    severity: 'info',
+                    metadata: { market_open: marketOpen, raw_data: marketData.data }
+                  });
+              } catch (logError) {
+                console.warn('Failed to log market status:', logError);
+              }
+            } else {
+              throw new Error(marketData?.message || 'Market status API failed');
+            }
           } catch (e) {
-            console.log('Market status fetch failed:', e.message);
-            await supabaseClient
-              .from('activity_logs')
-              .insert({
-                event_type: 'MARKET',
-                event_name: 'MARKET_ERROR',
-                symbol: null,
-                message: `Failed to fetch market status: ${e.message}`,
-                severity: 'error',
-                metadata: { error: e.message }
-              });
+            const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+            console.log('Market status fetch failed:', errorMessage);
+            try {
+              await supabaseClient
+                .from('activity_logs')
+                .insert({
+                  event_type: 'MARKET',
+                  event_name: 'MARKET_ERROR',
+                  symbol: null,
+                  message: `Failed to fetch market status: ${errorMessage}`,
+                  severity: 'error',
+                  metadata: { error: errorMessage }
+                });
+            } catch (logError) {
+              console.warn('Failed to log market error:', logError);
+            }
           }
 
           try {
             const positionsData = await makeKiteApiCall('/portfolio/positions', liveStatusSessionData.access_token, credentialsData.api_key);
-            positions = positionsData.data?.net || [];
             
-            const activePositions = positions.filter((pos: any) => pos.quantity !== 0);
-            await supabaseClient
-              .from('activity_logs')
-              .insert({
-                event_type: 'POSITION',
-                event_name: 'POSITION_UPDATE',
-                symbol: null,
-                message: `Portfolio status: ${activePositions.length} active positions, ${positions.length - activePositions.length} closed positions`,
-                severity: 'info',
-                metadata: { 
-                  active_count: activePositions.length,
-                  total_count: positions.length,
-                  positions: activePositions.map((p: any) => ({ symbol: p.tradingsymbol, quantity: p.quantity, pnl: p.pnl }))
-                }
-              });
+            // Check if the API call was successful
+            if (positionsData && positionsData.status !== 'error') {
+              positions = positionsData.data?.net || [];
+              
+              const activePositions = positions.filter((pos: any) => pos.quantity !== 0);
+              try {
+                await supabaseClient
+                  .from('activity_logs')
+                  .insert({
+                    event_type: 'POSITION',
+                    event_name: 'POSITION_UPDATE',
+                    symbol: null,
+                    message: `Portfolio status: ${activePositions.length} active positions, ${positions.length - activePositions.length} closed positions`,
+                    severity: 'info',
+                    metadata: { 
+                      active_count: activePositions.length,
+                      total_count: positions.length,
+                      positions: activePositions.map((p: any) => ({ symbol: p.tradingsymbol, quantity: p.quantity, pnl: p.pnl }))
+                    }
+                  });
+              } catch (logError) {
+                console.warn('Failed to log position update:', logError);
+              }
+            } else {
+              throw new Error(positionsData?.message || 'Positions API failed');
+            }
           } catch (e) {
-            console.log('Positions fetch failed:', e.message);
-            await supabaseClient
-              .from('activity_logs')
-              .insert({
-                event_type: 'POSITION',
-                event_name: 'POSITION_ERROR',
-                symbol: null,
-                message: `Failed to fetch positions: ${e.message}`,
-                severity: 'error',
-                metadata: { error: e.message }
-              });
+            const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+            console.log('Positions fetch failed:', errorMessage);
+            try {
+              await supabaseClient
+                .from('activity_logs')
+                .insert({
+                  event_type: 'POSITION',
+                  event_name: 'POSITION_ERROR',
+                  symbol: null,
+                  message: `Failed to fetch positions: ${errorMessage}`,
+                  severity: 'error',
+                  metadata: { error: errorMessage }
+                });
+            } catch (logError) {
+              console.warn('Failed to log position error:', logError);
+            }
           }
 
           // Log trading status
@@ -524,21 +627,31 @@ serve(async (req) => {
           });
 
         } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          const errorStack = error instanceof Error ? error.stack : 'No stack trace';
+          
           console.error('Live status error:', error);
-          await supabaseClient
-            .from('activity_logs')
-            .insert({
-              event_type: 'SYSTEM',
-              event_name: 'STATUS_ERROR',
-              symbol: null,
-              message: `System error during status check: ${error.message}`,
-              severity: 'error',
-              metadata: { error: error.message, stack: error.stack }
-            });
+          
+          // Try to log the error, but don't fail if logging fails
+          try {
+            await supabaseClient
+              .from('activity_logs')
+              .insert({
+                event_type: 'SYSTEM',
+                event_name: 'STATUS_ERROR',
+                symbol: null,
+                message: `System error during status check: ${errorMessage}`,
+                severity: 'error',
+                metadata: { error: errorMessage, stack: errorStack }
+              });
+          } catch (logError) {
+            console.warn('Failed to log status error:', logError);
+          }
 
           return new Response(JSON.stringify({
             status: 'error',
-            message: `Live status error: ${error.message}`
+            message: `Live status error: ${errorMessage}`,
+            timestamp: new Date().toISOString()
           }), {
             status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -910,6 +1023,7 @@ serve(async (req) => {
         try {
           const { symbol, setup_type, setup_time, message } = requestData;
           
+          // Validate required fields
           if (!symbol || !setup_type || !message) {
             return new Response(JSON.stringify({
               status: 'error',
@@ -920,13 +1034,27 @@ serve(async (req) => {
             });
           }
 
+          // Validate setup_type
+          if (!['BUY', 'SELL', 'INVALID'].includes(setup_type)) {
+            return new Response(JSON.stringify({
+              status: 'error',
+              message: 'setup_type must be BUY, SELL, or INVALID'
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
           const formatted_message = `[${setup_time || new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}] ${message}`;
           
-          // Log to activity_logs
-          await supabaseClient
-            .from('activity_logs')
-            .insert({
-              event_type: 'SETUP_DETECTION',
+          console.log('Logging setup detection:', { symbol, setup_type, formatted_message });
+          
+          // Log to activity_logs with error handling
+          try {
+            await supabaseClient
+              .from('activity_logs')
+              .insert({
+                event_type: 'SETUP_DETECTION',
               event_name: `SETUP_${setup_type}`,
               symbol: symbol,
               message: formatted_message,
@@ -938,15 +1066,28 @@ serve(async (req) => {
                 timestamp: new Date().toISOString()
               }
             });
+            
+            console.log('Successfully logged to activity_logs');
+          } catch (activityLogError) {
+            console.error('Failed to log to activity_logs:', activityLogError);
+            // Continue execution even if activity log fails
+          }
 
-          // Also log to trading_logs for strategy monitoring
-          await supabaseClient
-            .from('trading_logs')
-            .insert({
-              message: formatted_message,
-              level: 'info',
-              symbol: symbol
-            });
+          // Also log to trading_logs for strategy monitoring with error handling
+          try {
+            await supabaseClient
+              .from('trading_logs')
+              .insert({
+                message: formatted_message,
+                level: 'info',
+                symbol: symbol
+              });
+            
+            console.log('Successfully logged to trading_logs');
+          } catch (tradingLogError) {
+            console.error('Failed to log to trading_logs:', tradingLogError);
+            // Continue execution even if trading log fails
+          }
 
           return new Response(JSON.stringify({
             status: 'success',
@@ -957,9 +1098,12 @@ serve(async (req) => {
           });
 
         } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          console.error('Setup detection logging error:', error);
+          
           return new Response(JSON.stringify({
             status: 'error',
-            message: `Failed to log setup detection: ${error.message}`
+            message: `Failed to log setup detection: ${errorMessage}`
           }), {
             status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -1072,9 +1216,14 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Edge function error:', error);
+    
+    // Ensure we always return a proper error response
+    const errorMessage = error instanceof Error ? error.message : 'Unknown server error';
+    
     return new Response(JSON.stringify({
       status: 'error',
-      message: `Server error: ${error.message}`
+      message: `Server error: ${errorMessage}`,
+      timestamp: new Date().toISOString()
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
