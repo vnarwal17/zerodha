@@ -473,7 +473,26 @@ serve(async (req) => {
 
           // Log trading status
           const isTrading = liveStatusSessionData.trading_active || false;
-          const symbolCount = liveStatusSessionData.symbols ? JSON.parse(liveStatusSessionData.symbols).length : 0;
+          let symbolCount = 0;
+          let symbolsList = [];
+          
+          // Safely parse symbols - it could be a string, object, or null
+          try {
+            if (liveStatusSessionData.symbols) {
+              if (typeof liveStatusSessionData.symbols === 'string') {
+                symbolsList = JSON.parse(liveStatusSessionData.symbols);
+              } else if (Array.isArray(liveStatusSessionData.symbols)) {
+                symbolsList = liveStatusSessionData.symbols;
+              } else {
+                symbolsList = [];
+              }
+              symbolCount = symbolsList.length;
+            }
+          } catch (e) {
+            console.log('Error parsing symbols:', e.message);
+            symbolsList = [];
+            symbolCount = 0;
+          }
           
           await supabaseClient
             .from('activity_logs')
@@ -486,7 +505,7 @@ serve(async (req) => {
               metadata: { 
                 trading_active: isTrading,
                 symbol_count: symbolCount,
-                symbols: liveStatusSessionData.symbols ? JSON.parse(liveStatusSessionData.symbols) : []
+                symbols: symbolsList
               }
             });
           
