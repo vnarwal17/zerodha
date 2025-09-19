@@ -19,6 +19,8 @@ interface ActivityLog {
   severity: "info" | "success" | "warning" | "error";
   metadata: any;
   created_at: string;
+  is_setup_detection?: boolean;
+  formatted_time?: string;
 }
 
 interface TradingLogsProps {
@@ -40,6 +42,7 @@ export function TradingLogs({
 
   const eventTypes = [
     { value: "all", label: "All Events" },
+    { value: "SETUP_DETECTION", label: "🎯 Setup Detection" },
     { value: "CONNECTION", label: "Connection" },
     { value: "TRADING", label: "Trading" },
     { value: "ANALYSIS", label: "Analysis" },
@@ -95,6 +98,7 @@ export function TradingLogs({
 
   const getEventIcon = (eventType: string) => {
     switch (eventType) {
+      case "SETUP_DETECTION": return "🎯";
       case "CONNECTION": return "🔗";
       case "TRADING": return "📈";
       case "ANALYSIS": return "🔍";
@@ -186,21 +190,43 @@ export function TradingLogs({
               displayLogs.map((log) => {
                 // Handle both old format (from props) and new format (from API)
                 const isNewFormat = 'event_type' in log;
+                const isSetupDetection = log.is_setup_detection || log.event_type === 'SETUP_DETECTION';
                 
                 return (
                   <div
                     key={log.id}
-                    className="py-1 px-2 text-sm text-foreground font-mono hover:bg-accent/30 transition-colors"
+                    className={`py-2 px-3 text-sm transition-colors border-l-2 ${
+                      isSetupDetection 
+                        ? 'bg-primary/5 border-l-primary hover:bg-primary/10 font-semibold' 
+                        : 'border-l-transparent hover:bg-accent/30'
+                    }`}
                   >
-                    <span className="text-muted-foreground">
-                      {isNewFormat 
-                        ? formatTimestamp(log.created_at)
-                        : log.timestamp
-                      }
-                    </span>
-                    <span className="ml-2">
+                    <div className="flex items-center gap-2">
+                      {isNewFormat && (
+                        <span className="text-xs">
+                          {getEventIcon(log.event_type)}
+                        </span>
+                      )}
+                      <span className={`text-muted-foreground text-xs ${isSetupDetection ? 'font-medium' : ''}`}>
+                        {isNewFormat 
+                          ? log.formatted_time || formatTimestamp(log.created_at)
+                          : log.timestamp
+                        }
+                      </span>
+                      {log.symbol && (
+                        <StatusBadge variant="neutral" className="text-xs px-1 py-0">
+                          {log.symbol}
+                        </StatusBadge>
+                      )}
+                      {isSetupDetection && (
+                        <StatusBadge variant="success" className="text-xs px-1 py-0">
+                          SETUP
+                        </StatusBadge>
+                      )}
+                    </div>
+                    <div className={`mt-1 font-mono ${isSetupDetection ? 'text-foreground font-medium' : 'text-foreground'}`}>
                       {log.message}
-                    </span>
+                    </div>
                   </div>
                 );
               })

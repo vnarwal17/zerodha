@@ -74,6 +74,14 @@ class TradingLogger:
     def log_session_event(self, event: str, data: Dict[str, Any]):
         """Log session and authentication events"""
         self.logger.info(f"SESSION: {event} - {data}")
+        
+    def log_setup_detection(self, symbol: str, setup_type: str, data: Dict[str, Any]):
+        """Log setup detection events in the required format"""
+        formatted_message = data.get('formatted_message', f'Setup detected for {symbol}: {setup_type}')
+        self.logger.info(f"SETUP: {formatted_message}")
+        
+        # Also log structured data for debugging
+        self.logger.debug(f"SETUP_DATA: {symbol} - {setup_type} - {data}")
 
 # Global logger instance
 trading_logger = TradingLogger()

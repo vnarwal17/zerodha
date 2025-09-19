@@ -1,8 +1,10 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Activity, Settings, Power, PowerOff, LogOut, TestTube } from "lucide-react";
+import { Activity, Settings, Power, PowerOff, LogOut, TestTube, Target } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { tradingApi } from "@/services/trading-api";
+import { useToast } from "@/hooks/use-toast";
 
 interface TradingHeaderProps {
   isConnected: boolean;
@@ -20,6 +22,43 @@ export function TradingHeader({
   onLogout
 }: TradingHeaderProps) {
   const navigate = useNavigate();
+  const { toast } = useToast();
+
+  const handleTestSetupDetection = async () => {
+    const testSetups = [
+      { symbol: "RELIANCE", type: "BUY", message: "Setup detected for RELIANCE: BUY (10 AM candle closed above 50-SMA)" },
+      { symbol: "TCS", type: "SELL", message: "Setup detected for TCS: SELL (10 AM candle closed below 50-SMA)" },
+      { symbol: "INFY", type: "BUY", message: "Setup detected for INFY: BUY (10 AM candle closed above 50-SMA)" }
+    ];
+
+    const currentTime = new Date().toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      hour12: true 
+    });
+
+    for (const setup of testSetups) {
+      try {
+        const response = await tradingApi.logSetupDetection(
+          setup.symbol, 
+          setup.type as 'BUY' | 'SELL', 
+          currentTime, 
+          setup.message
+        );
+        
+        if (response.status === 'success') {
+          console.log(`Logged setup: ${response.data?.formatted_message}`);
+        }
+      } catch (error) {
+        console.error(`Failed to log setup for ${setup.symbol}:`, error);
+      }
+    }
+    
+    toast({
+      title: "Setup Detection Demo",
+      description: `Logged ${testSetups.length} test setup detections. Check the Activity Logs.`,
+    });
+  };
   return (
     <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-40">
       <div className="flex items-center justify-between px-6 py-4">
@@ -74,6 +113,15 @@ export function TradingHeader({
             title="Test Page"
           >
             <TestTube className="h-4 w-4" />
+          </Button>
+
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={handleTestSetupDetection}
+            title="Test Setup Detection Logging"
+          >
+            <Target className="h-4 w-4" />
           </Button>
           
           {onLogout && (

@@ -313,21 +313,33 @@ class ImprovedTradingEngine:
     
     async def _check_setup(self, symbol: str, state: StrategyState, candle: CandleData, sma_value: float):
         """Check for valid 10 AM setup"""
+        setup_time = candle.timestamp.strftime("%I:%M %p")  # Format time as 10:00 AM
+        
         # Check if entire candle is above SMA (Long setup)
         if candle.low > sma_value:
             state.bias = "long"
             state.setup_candle = candle
+            
+            # Log setup detection in required format
+            setup_message = f"Setup detected for {symbol}: BUY (10 AM candle closed above 50-SMA)"
+            self._log_setup_detection(symbol, "BUY", setup_time, setup_message)
             self._log(symbol, "SETUP_LONG", f"Valid long setup detected. Candle: {candle.low:.2f}-{candle.high:.2f}, SMA: {sma_value:.2f}")
         
         # Check if entire candle is below SMA (Short setup)
         elif candle.high < sma_value:
             state.bias = "short"
             state.setup_candle = candle
+            
+            # Log setup detection in required format
+            setup_message = f"Setup detected for {symbol}: SELL (10 AM candle closed below 50-SMA)"
+            self._log_setup_detection(symbol, "SELL", setup_time, setup_message)
             self._log(symbol, "SETUP_SHORT", f"Valid short setup detected. Candle: {candle.low:.2f}-{candle.high:.2f}, SMA: {sma_value:.2f}")
         
         # Invalid setup - candle touches SMA
         else:
             state.trade_completed = True
+            invalid_message = f"Setup rejected for {symbol}: INVALID (10 AM candle touched 50-SMA)"
+            self._log_setup_detection(symbol, "INVALID", setup_time, invalid_message)
             self._log(symbol, "SETUP_INVALID", f"Setup invalid - candle touches SMA. Skipping day.")
     
     async def _check_rejection(self, symbol: str, state: StrategyState, candle: CandleData, sma_value: float):
@@ -689,6 +701,31 @@ class ImprovedTradingEngine:
         )
         self.logs.append(log_entry)
         logger.info(f"[{symbol}] {event}: {message}")
+    
+    def _log_setup_detection(self, symbol: str, setup_type: str, setup_time: str, message: str):
+        """Log setup detection in the required format: [10:00 AM] Setup detected for Reliance: BUY (10 AM candle closed above 50-SMA)"""
+        formatted_message = f"[{setup_time}] {message}"
+        
+        # Create detailed log entry
+        log_entry = StrategyLog(
+            timestamp=datetime.now().isoformat(),
+            symbol=symbol,
+            event="SETUP_DETECTION",
+            message=formatted_message
+        )
+        self.logs.append(log_entry)
+        
+        # Also log to trading logger for database persistence
+        trading_logger.log_setup_detection(symbol, setup_type, {
+            "setup_time": setup_time,
+            "message": message,
+            "formatted_message": formatted_message,
+            "category": "SETUP_DETECTION"
+        })
+        
+        # Print to console for immediate visibility
+        print(formatted_message)
+        logger.info(formatted_message)
         
         # Keep only last 1000 logs
         if len(self.logs) > 1000:

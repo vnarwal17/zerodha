@@ -252,8 +252,17 @@ class TradingApiService {
   }
 
   // Export
-  async getActivityLogs(limit?: number, eventType?: string): Promise<ApiResponse<{ logs: any[]; count: number }>> {
+  async getActivityLogs(limit?: number, eventType?: string): Promise<ApiResponse<{ logs: any[]; count: number; setup_logs?: any[] }>> {
     return this.callEdgeFunction('/get_activity_logs', { limit, event_type: eventType });
+  }
+
+  async logSetupDetection(symbol: string, setupType: 'BUY' | 'SELL' | 'INVALID', setupTime: string, message: string): Promise<ApiResponse<{ formatted_message: string }>> {
+    return this.callEdgeFunction('/log_setup_detection', { 
+      symbol, 
+      setup_type: setupType, 
+      setup_time: setupTime, 
+      message 
+    });
   }
 
   async exportTrades(trades: any[]): Promise<ApiResponse<Blob>> {

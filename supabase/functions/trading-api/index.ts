@@ -884,15 +884,87 @@ serve(async (req) => {
           });
         }
         
+        // Highlight setup detection logs
+        const processedLogs = (activityLogs || []).map(log => ({
+          ...log,
+          is_setup_detection: log.event_type === 'SETUP_DETECTION',
+          formatted_time: new Date(log.created_at).toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+          })
+        }));
+        
         return new Response(JSON.stringify({
           status: 'success',
           data: {
-            logs: activityLogs || [],
-            count: activityLogs?.length || 0
+            logs: processedLogs,
+            count: processedLogs.length,
+            setup_logs: processedLogs.filter(log => log.is_setup_detection)
           }
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
+
+      case '/log_setup_detection':
+        try {
+          const { symbol, setup_type, setup_time, message } = requestData;
+          
+          if (!symbol || !setup_type || !message) {
+            return new Response(JSON.stringify({
+              status: 'error',
+              message: 'symbol, setup_type, and message are required'
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
+          const formatted_message = `[${setup_time || new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}] ${message}`;
+          
+          // Log to activity_logs
+          await supabaseClient
+            .from('activity_logs')
+            .insert({
+              event_type: 'SETUP_DETECTION',
+              event_name: `SETUP_${setup_type}`,
+              symbol: symbol,
+              message: formatted_message,
+              severity: 'info',
+              metadata: {
+                setup_type,
+                setup_time,
+                original_message: message,
+                timestamp: new Date().toISOString()
+              }
+            });
+
+          // Also log to trading_logs for strategy monitoring
+          await supabaseClient
+            .from('trading_logs')
+            .insert({
+              message: formatted_message,
+              level: 'info',
+              symbol: symbol
+            });
+
+          return new Response(JSON.stringify({
+            status: 'success',
+            message: 'Setup detection logged successfully',
+            data: { formatted_message }
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+
+        } catch (error) {
+          return new Response(JSON.stringify({
+            status: 'error',
+            message: `Failed to log setup detection: ${error.message}`
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
 
       case '/place_test_order':
         try {
