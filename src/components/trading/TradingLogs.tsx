@@ -190,51 +190,17 @@ export function TradingLogs({
                 return (
                   <div
                     key={log.id}
-                    className="flex items-start space-x-3 p-3 rounded-lg border border-border hover:bg-accent/50 transition-colors"
+                    className="py-1 px-2 text-sm text-foreground font-mono hover:bg-accent/30 transition-colors"
                   >
-                    <div className="text-xs text-muted-foreground font-mono mt-1 min-w-[60px]">
+                    <span className="text-muted-foreground">
                       {isNewFormat 
                         ? formatTimestamp(log.created_at)
                         : log.timestamp
                       }
-                    </div>
-                    
-                    <div className="text-lg mt-0.5">
-                      {isNewFormat 
-                        ? getEventIcon(log.event_type)
-                        : "📝"
-                      }
-                    </div>
-                    
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <span className="font-medium text-sm">
-                          {log.symbol || 'SYSTEM'}
-                        </span>
-                        <StatusBadge 
-                          variant={isNewFormat 
-                            ? getStatusVariant(log.severity) 
-                            : getStatusVariant(log.type)
-                          } 
-                          size="sm"
-                        >
-                          {isNewFormat ? log.event_name : log.event}
-                        </StatusBadge>
-                        {isNewFormat && (
-                          <span className="text-xs px-2 py-1 bg-muted rounded text-muted-foreground">
-                            {log.event_type}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-sm text-foreground">
-                        {log.message}
-                      </div>
-                      {isNewFormat && log.metadata && Object.keys(log.metadata).length > 0 && (
-                        <div className="text-xs text-muted-foreground mt-1 font-mono">
-                          {JSON.stringify(log.metadata, null, 2)}
-                        </div>
-                      )}
-                    </div>
+                    </span>
+                    <span className="ml-2">
+                      {log.message}
+                    </span>
                   </div>
                 );
               })
