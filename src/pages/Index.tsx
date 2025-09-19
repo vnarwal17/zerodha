@@ -89,9 +89,11 @@ const Index = () => {
     setIsConnected(connected);
     if (connected && userData) {
       setUserInfo(userData);
+      // Display user info properly, fallback to user_id if user_name is not available
+      const displayName = userData.user_name || userData.user_id || userData.username || 'User';
       toast({
         title: "Connected",
-        description: `Successfully connected as ${userData.user_id}`,
+        description: `Successfully connected as ${displayName}`,
       });
     } else {
       setUserInfo(null);
