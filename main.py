@@ -9,14 +9,36 @@ import json
 import os
 
 from models import *
-from trading_engine import TradingEngine
+from trading_engine import ImprovedTradingEngine
 from zerodha_client import ZerodhaClient
+from enhanced_error_handler import TradingBotException
+from trading_config import TradingConfig
+from trading_logger import trading_logger
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+config = TradingConfig()
+logging.basicConfig(level=getattr(logging, config.LOG_LEVEL))
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Trading Bot API", version="1.0.0")
+app = FastAPI(title="Trading Bot API", version="2.0.0")
+
+# Error handling middleware
+@app.middleware("http")
+async def error_handling_middleware(request: Request, call_next):
+    try:
+        response = await call_next(request)
+        return response
+    except TradingBotException as e:
+        return JSONResponse(
+            status_code=e.status_code,
+            content={"status": "error", "message": e.message, "code": e.error_code}
+        )
+    except Exception as e:
+        logger.error(f"Unhandled error: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": "Internal server error"}
+        )
 
 # CORS middleware
 app.add_middleware(
@@ -29,7 +51,7 @@ app.add_middleware(
 
 # Global instances
 zerodha_client = ZerodhaClient()
-trading_engine = TradingEngine(zerodha_client)
+trading_engine = ImprovedTradingEngine(zerodha_client)
 
 @app.post("/api/set_credentials")
 async def set_credentials(request: dict):
@@ -126,8 +148,15 @@ async def get_instruments():
 
 @app.post("/api/start_live_trading")
 async def start_live_trading(request: StartTradingRequest):
-    """Start live trading for selected symbols"""
+    """Start live trading with proper validation"""
     try:
+        # Validate market hours
+        if not trading_engine.is_market_open():
+            return ApiResponse(status="error", message="Market is closed")
+            
+        # Validate session
+        await zerodha_client.refresh_session_if_needed()
+        
         if not zerodha_client.is_connected():
             return ApiResponse(
                 status="error",
@@ -138,11 +167,20 @@ async def start_live_trading(request: StartTradingRequest):
         await trading_engine.start_trading(request.symbols)
         
         symbol_names = [symbol.symbol for symbol in request.symbols]
+        
+        trading_logger.log_system_event("LIVE_TRADING_STARTED", {
+            "symbols": symbol_names,
+            "count": len(symbol_names)
+        })
+        
         return ApiResponse(
             status="success",
             message=f"Started live trading for {len(symbol_names)} symbols",
             data={"symbols": symbol_names}
         )
+        
+    except TradingBotException as e:
+        return ApiResponse(status="error", message=e.message)
     except Exception as e:
         logger.error(f"Start trading error: {str(e)}")
         return ApiResponse(status="error", message=str(e))

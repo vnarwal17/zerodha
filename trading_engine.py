@@ -1,15 +1,20 @@
 import asyncio
 import logging
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 from typing import Dict, List, Optional, Any
 import pandas as pd
 import numpy as np
 from models import *
 from zerodha_client import ZerodhaClient
+from enhanced_error_handler import EnhancedErrorHandler
+from risk_manager import RiskManager
+from instrument_manager import InstrumentManager
+from trading_config import TradingConfig
+from trading_logger import trading_logger
 
 logger = logging.getLogger(__name__)
 
-class TradingEngine:
+class ImprovedTradingEngine:
     def __init__(self, zerodha_client: ZerodhaClient):
         self.zerodha = zerodha_client
         self.is_running = False
@@ -18,33 +23,84 @@ class TradingEngine:
         self.logs: List[StrategyLog] = []
         self.settings = TradingSettings()
         
-        # Strategy parameters
-        self.CANDLE_INTERVAL = "3minute"
-        self.SMA_PERIOD = 50
+        # Initialize components
+        self.config = TradingConfig()
+        self.error_handler = EnhancedErrorHandler(zerodha_client)
+        self.risk_manager = RiskManager(
+            max_position_size=self.config.MAX_POSITION_SIZE,
+            max_daily_loss=self.config.MAX_DAILY_LOSS
+        )
+        self.instrument_manager = InstrumentManager()
+        self.instrument_manager.set_zerodha_client(zerodha_client)
+        
+        # Market timing
+        self.MARKET_OPEN = time(self.config.MARKET_OPEN_HOUR, self.config.MARKET_OPEN_MINUTE)
+        self.MARKET_CLOSE = time(self.config.MARKET_CLOSE_HOUR, self.config.MARKET_CLOSE_MINUTE)
+        self.FORCE_EXIT_TIME = time(self.config.FORCE_EXIT_HOUR, self.config.FORCE_EXIT_MINUTE)
+        self.AUTO_SQUAREOFF_EQUITY = time(15, 20)  # MIS equity auto square-off
+        self.ENTRY_CUTOFF = time(self.config.ENTRY_CUTOFF_HOUR, self.config.ENTRY_CUTOFF_MINUTE)
+        
+        # Strategy parameters from config
+        self.CANDLE_INTERVAL = self.config.CANDLE_INTERVAL
+        self.SMA_PERIOD = self.config.SMA_PERIOD
         self.SETUP_TIME = time(10, 0)  # 10:00 AM
-        self.ENTRY_OFFSET = 0.01  # Strategy says ₹0.01 not ₹0.10
-        self.SL_OFFSET = 0.01     # Strategy says ₹0.01 not ₹0.15
-        self.RISK_REWARD_RATIO = 5
-        self.MIN_WICK_PERCENT = 15
-        self.SKIP_CANDLES = 2
-        self.ENTRY_CUTOFF = time(13, 0)  # 1:00 PM
-        self.FORCE_EXIT_TIME = time(15, 0)  # 3:00 PM
+        self.ENTRY_OFFSET = self.config.ENTRY_OFFSET
+        self.SL_OFFSET = self.config.SL_OFFSET
+        self.RISK_REWARD_RATIO = self.config.RISK_REWARD_RATIO
+        self.MIN_WICK_PERCENT = self.config.MIN_WICK_PERCENT
+        self.SKIP_CANDLES = self.config.SKIP_CANDLES
     
+    def is_market_open(self):
+        """Check if market is currently open"""
+        now = datetime.now(timezone(timedelta(hours=5, minutes=30)))  # IST
+        current_time = now.time()
+        is_weekday = now.weekday() < 5
+        is_holiday = self.is_market_holiday(now.date())
+        
+        return (self.MARKET_OPEN <= current_time <= self.MARKET_CLOSE and 
+                is_weekday and not is_holiday)
+    
+    def is_market_holiday(self, date):
+        """Check if given date is a market holiday (basic implementation)"""
+        # This should be enhanced with actual NSE holiday calendar
+        return False
+
     async def start_trading(self, symbols: List[TradingSymbol]):
-        """Start live trading for given symbols"""
-        self.is_running = True
-        
-        # Initialize strategy states
-        for symbol in symbols:
-            self.strategy_states[symbol.symbol] = StrategyState(
-                symbol=symbol.symbol,
-                last_update=datetime.now()
-            )
-        
-        self._log("SYSTEM", "Trading started", f"Monitoring {len(symbols)} symbols")
-        
-        # Start the main trading loop
-        asyncio.create_task(self._trading_loop())
+        """Start live trading with comprehensive validation"""
+        try:
+            # Validate market hours
+            if not self.is_market_open():
+                raise TradingBotException("Market is closed", "MARKET_CLOSED")
+                
+            # Validate session
+            await self.zerodha.refresh_session_if_needed()
+            
+            # Update instruments
+            await self.instrument_manager.update_instruments_daily()
+            
+            self.is_running = True
+            
+            # Initialize strategy states
+            for symbol in symbols:
+                self.strategy_states[symbol.symbol] = StrategyState(
+                    symbol=symbol.symbol,
+                    last_update=datetime.now()
+                )
+            
+            trading_logger.log_system_event("TRADING_STARTED", {
+                "symbols_count": len(symbols),
+                "symbols": [s.symbol for s in symbols],
+                "config": self.config.to_dict()
+            })
+            
+            self._log("SYSTEM", "Trading started", f"Monitoring {len(symbols)} symbols")
+            
+            # Start the main trading loop
+            asyncio.create_task(self._trading_loop())
+            
+        except Exception as e:
+            trading_logger.log_error("START_TRADING_ERROR", str(e), {"symbols": symbols})
+            raise
     
     async def stop_trading(self):
         """Stop live trading"""
@@ -52,23 +108,36 @@ class TradingEngine:
         self._log("SYSTEM", "Trading stopped", "All monitoring stopped")
     
     async def _trading_loop(self):
-        """Main trading loop"""
+        """Enhanced main trading loop with comprehensive error handling"""
         while self.is_running:
             try:
-                current_time = datetime.now().time()
+                current_time = datetime.now(timezone(timedelta(hours=5, minutes=30)))  # IST
+                current_time_only = current_time.time()
                 
-                # Only trade during market hours (9:15 AM to 3:30 PM)
-                if time(9, 15) <= current_time <= time(15, 30):
-                    await self._process_all_symbols()
+                # Only trade during market hours
+                if self.MARKET_OPEN <= current_time_only <= self.MARKET_CLOSE:
+                    await self.error_handler.handle_api_call(self._process_all_symbols)
                 
-                # Check for force exit at 3:00 PM
-                if current_time >= self.FORCE_EXIT_TIME:
+                # Auto square-off warning at 3:00 PM
+                if current_time_only >= self.FORCE_EXIT_TIME:
                     await self._force_exit_all_positions()
                 
+                # Final square-off before MIS auto square-off
+                if current_time_only >= self.AUTO_SQUAREOFF_EQUITY:
+                    await self._emergency_exit_all_positions()
+                
+                # Check session validity every hour
+                if current_time.minute == 0:
+                    await self.zerodha.refresh_session_if_needed()
+                
                 # Wait before next iteration (3 minutes for candle close)
-                await asyncio.sleep(180)  # 3 minutes
+                await asyncio.sleep(180)
                 
             except Exception as e:
+                trading_logger.log_error("TRADING_LOOP_ERROR", str(e), {
+                    "time": datetime.now().isoformat(),
+                    "is_running": self.is_running
+                })
                 logger.error(f"Trading loop error: {e}")
                 await asyncio.sleep(60)  # Wait 1 minute on error
     
@@ -209,55 +278,113 @@ class TradingEngine:
             if candle.low <= entry_price:
                 await self._enter_position(symbol, state, "short", entry_price, stop_loss)
     
-    async def _enter_position(self, symbol: str, state: StrategyState, direction: str, entry_price: float, stop_loss: float):
-        """Enter a trading position"""
-        # Calculate target
-        risk = abs(entry_price - stop_loss)
-        target = entry_price + (risk * self.RISK_REWARD_RATIO) if direction == "long" else entry_price - (risk * self.RISK_REWARD_RATIO)
-        
-        # Calculate quantity based on position sizing
-        quantity = self._calculate_quantity(entry_price, stop_loss)
-        
-        if not self.settings.dry_run:
-            # Place actual order using the exact format specification
-            order_result = await self.zerodha.place_order(
-                symbol=symbol,
-                transaction_type="BUY" if direction == "long" else "SELL",
-                quantity=quantity,
-                price=entry_price
-            )
+    async def place_order_with_validation(self, order_params: Dict[str, Any]) -> str:
+        """Place order with comprehensive validation"""
+        # Validate market hours
+        if not self.is_market_open():
+            raise TradingBotException("Market is closed", "MARKET_CLOSED")
             
-            if order_result['status'] != 'success':
-                self._log(symbol, "ORDER_FAILED", f"Order placement failed: {order_result.get('message')}")
-                return
-            
-            self._log(symbol, "ORDER_PLACED", f"Order placed successfully: {order_result.get('order_id')}")
-        else:
-            self._log(symbol, "DRY_RUN", f"DRY RUN: Would place {direction.upper()} order @ {entry_price:.2f}")
+        # Risk validation
+        await self.risk_manager.validate_order_risk(order_params, self.zerodha)
         
-        # Create position
-        position = Position(
-            id=f"{symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-            symbol=symbol,
-            direction=direction,
-            entry_price=entry_price,
-            current_price=entry_price,
-            stop_loss=stop_loss,
-            target=target,
-            quantity=quantity,
-            status="ACTIVE",
-            unrealized_pnl=0.0,
-            entry_time=datetime.now().isoformat()
+        # Place order with error handling
+        order_id = await self.error_handler.handle_api_call(
+            self.zerodha.place_order, **order_params
         )
         
-        self.positions.append(position)
-        state.is_position_active = True
-        state.entry_price = entry_price
-        state.stop_loss = stop_loss
-        state.target = target
+        # Verify execution
+        await asyncio.sleep(1)  # Allow processing time
+        order_status = await self.zerodha.verify_order_status(order_id)
         
-        self._log(symbol, "POSITION_ENTERED", 
-                 f"{direction.upper()} @ {entry_price:.2f}, SL: {stop_loss:.2f}, Target: {target:.2f}, Qty: {quantity}")
+        if order_status not in ['COMPLETE', 'OPEN']:
+            raise TradingBotException(f"Order failed: {order_status}", "ORDER_FAILED")
+            
+        return order_id
+
+    async def _enter_position(self, symbol: str, state: StrategyState, direction: str, entry_price: float, stop_loss: float):
+        """Enter a trading position with enhanced validation"""
+        try:
+            # Calculate target
+            risk = abs(entry_price - stop_loss)
+            target = entry_price + (risk * self.RISK_REWARD_RATIO) if direction == "long" else entry_price - (risk * self.RISK_REWARD_RATIO)
+            
+            # Calculate quantity based on position sizing
+            quantity = self._calculate_quantity(entry_price, stop_loss)
+            
+            # Prepare order parameters
+            order_params = {
+                'symbol': symbol,
+                'transaction_type': "BUY" if direction == "long" else "SELL",
+                'quantity': quantity,
+                'price': entry_price
+            }
+            
+            if not self.settings.dry_run:
+                # Place actual order with validation
+                order_result = await self.place_order_with_validation(order_params)
+                
+                trading_logger.log_order_event(symbol, "ENTRY_ORDER", {
+                    "direction": direction,
+                    "entry_price": entry_price,
+                    "quantity": quantity,
+                    "order_id": order_result.get('order_id'),
+                    "status": order_result.get('status')
+                })
+                
+                if order_result['status'] != 'success':
+                    self._log(symbol, "ORDER_FAILED", f"Order placement failed: {order_result.get('message')}")
+                    return
+                
+                self._log(symbol, "ORDER_PLACED", f"Order placed successfully: {order_result.get('order_id')}")
+                
+                # Implement GTT stop-loss for added protection
+                await self.risk_manager.implement_stop_loss_gtt(self.zerodha, symbol, quantity, stop_loss)
+                
+            else:
+                self._log(symbol, "DRY_RUN", f"DRY RUN: Would place {direction.upper()} order @ {entry_price:.2f}")
+            
+            # Create position
+            position = Position(
+                id=f"{symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                symbol=symbol,
+                direction=direction,
+                entry_price=entry_price,
+                current_price=entry_price,
+                stop_loss=stop_loss,
+                target=target,
+                quantity=quantity,
+                status="ACTIVE",
+                unrealized_pnl=0.0,
+                entry_time=datetime.now().isoformat()
+            )
+            
+            self.positions.append(position)
+            self.risk_manager.add_position()
+            state.is_position_active = True
+            state.entry_price = entry_price
+            state.stop_loss = stop_loss
+            state.target = target
+            
+            trading_logger.log_position_event(symbol, "POSITION_ENTERED", {
+                "direction": direction,
+                "entry_price": entry_price,
+                "stop_loss": stop_loss,
+                "target": target,
+                "quantity": quantity,
+                "risk_amount": abs(entry_price - stop_loss) * quantity
+            })
+            
+            self._log(symbol, "POSITION_ENTERED", 
+                     f"{direction.upper()} @ {entry_price:.2f}, SL: {stop_loss:.2f}, Target: {target:.2f}, Qty: {quantity}")
+                     
+        except Exception as e:
+            trading_logger.log_error("POSITION_ENTRY_ERROR", str(e), {
+                "symbol": symbol,
+                "direction": direction,
+                "entry_price": entry_price,
+                "stop_loss": stop_loss
+            })
+            raise
     
     async def _monitor_position(self, symbol: str, state: StrategyState, candle: CandleData):
         """Monitor active position for exit conditions"""
@@ -323,9 +450,31 @@ class TradingEngine:
     async def _force_exit_all_positions(self):
         """Force exit all positions at market close"""
         active_positions = [p for p in self.positions if p.status == "ACTIVE"]
+        if active_positions:
+            trading_logger.log_system_event("FORCE_EXIT_INITIATED", {
+                "positions_count": len(active_positions),
+                "time": datetime.now().isoformat()
+            })
+            
         for position in active_positions:
             await self._exit_position(position, position.current_price, "FORCE_EXIT")
             # Mark state as completed
+            if position.symbol in self.strategy_states:
+                self.strategy_states[position.symbol].trade_completed = True
+
+    async def _emergency_exit_all_positions(self):
+        """Emergency exit all positions before auto square-off"""
+        active_positions = [p for p in self.positions if p.status == "ACTIVE"]
+        if active_positions:
+            trading_logger.log_system_event("EMERGENCY_EXIT_INITIATED", {
+                "positions_count": len(active_positions),
+                "reason": "Pre-auto-squareoff protection",
+                "time": datetime.now().isoformat()
+            })
+            
+        for position in active_positions:
+            # Use market orders for immediate execution
+            await self._exit_position(position, None, "EMERGENCY_EXIT")
             if position.symbol in self.strategy_states:
                 self.strategy_states[position.symbol].trade_completed = True
     
