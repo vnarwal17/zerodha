@@ -620,7 +620,7 @@ serve(async (req) => {
             .from('trading_sessions')
             .update({ 
               trading_active: true, 
-              trading_symbols: symbols,
+              symbols: symbols,
               updated_at: new Date().toISOString() 
             })
             .eq('id', 1);
@@ -663,7 +663,7 @@ serve(async (req) => {
             .from('trading_sessions')
             .update({ 
               trading_active: false, 
-              trading_symbols: null,
+              symbols: null,
               updated_at: new Date().toISOString() 
             })
             .eq('id', 1);
