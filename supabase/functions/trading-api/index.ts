@@ -1182,14 +1182,15 @@ serve(async (req) => {
           
           console.log('Zerodha order response:', orderResponse);
           
-          // Zerodha API returns order_id directly on success
-          if (orderResponse && orderResponse.order_id) {
+          // Handle Zerodha API response - check for both direct order_id and nested structure
+          if (orderResponse && (orderResponse.order_id || (orderResponse.data && orderResponse.data.order_id))) {
+            const orderId = orderResponse.order_id || orderResponse.data.order_id;
             return new Response(JSON.stringify({
               status: 'success',
               data: {
-                order_id: orderResponse.order_id,
+                order_id: orderId,
                 symbol: testSymbol,
-                message: `✅ Real test order placed successfully on Zerodha! Order ID: ${orderResponse.order_id}`
+                message: `✅ Real test order placed successfully on Zerodha! Order ID: ${orderId}`
               }
             }), {
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -1204,9 +1205,12 @@ serve(async (req) => {
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
           } else {
+            // Log the full response for debugging
+            console.error('Unexpected order response format:', orderResponse);
             return new Response(JSON.stringify({
               status: 'error',
-              message: `Test order failed: ${JSON.stringify(orderResponse)}`
+              message: `Unexpected response format from Zerodha API`,
+              debug_info: orderResponse
             }), {
               status: 500,
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
