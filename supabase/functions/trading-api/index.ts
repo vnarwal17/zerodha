@@ -488,51 +488,56 @@ serve(async (req) => {
             });
           }
 
-          // Try to fetch market and position data, but don't fail the entire request if they fail
+          // Try to fetch position data and determine market status
           let marketOpen = false;
           let positions = [];
           
+          // Determine market status based on Indian Standard Time
           try {
-            const marketData = await makeKiteApiCall('/market/status', liveStatusSessionData.access_token, credentialsData.api_key);
+            const now = new Date();
+            const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30
+            const istTime = new Date(now.getTime() + istOffset);
+            const currentHour = istTime.getUTCHours();
+            const currentMinute = istTime.getUTCMinutes();
+            const currentDay = istTime.getUTCDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
             
-            // Check if the API call was successful
-            if (marketData && marketData.status !== 'error') {
-              marketOpen = marketData.data?.some((market: any) => market.status === 'open') || false;
-              
-              try {
-                await supabaseClient
-                  .from('activity_logs')
-                  .insert({
-                    event_type: 'MARKET',
-                    event_name: 'MARKET_STATUS',
-                    symbol: null,
-                    message: `Market status: ${marketOpen ? 'OPEN - Trading active' : 'CLOSED - After hours'}`,
-                    severity: 'info',
-                    metadata: { market_open: marketOpen, raw_data: marketData.data }
-                  });
-              } catch (logError) {
-                console.warn('Failed to log market status:', logError);
-              }
-            } else {
-              throw new Error(marketData?.message || 'Market status API failed');
-            }
-          } catch (e) {
-            const errorMessage = e instanceof Error ? e.message : 'Unknown error';
-            console.log('Market status fetch failed:', errorMessage);
+            // Check if it's a weekday (Monday to Friday)
+            const isWeekday = currentDay >= 1 && currentDay <= 5;
+            
+            // Market hours: 9:15 AM to 3:30 PM IST on weekdays
+            const marketStartMinutes = 9 * 60 + 15; // 9:15 AM
+            const marketEndMinutes = 15 * 60 + 30; // 3:30 PM
+            const currentMinutes = currentHour * 60 + currentMinute;
+            
+            marketOpen = isWeekday && currentMinutes >= marketStartMinutes && currentMinutes < marketEndMinutes;
+            
             try {
               await supabaseClient
                 .from('activity_logs')
                 .insert({
                   event_type: 'MARKET',
-                  event_name: 'MARKET_ERROR',
+                  event_name: 'MARKET_STATUS',
                   symbol: null,
-                  message: `Failed to fetch market status: ${errorMessage}`,
-                  severity: 'error',
-                  metadata: { error: errorMessage }
+                  message: `Market status: ${marketOpen ? 'OPEN - Trading active' : 'CLOSED - After hours'}`,
+                  severity: 'info',
+                  metadata: { 
+                    market_open: marketOpen, 
+                    ist_time: istTime.toISOString(),
+                    current_day: currentDay,
+                    is_weekday: isWeekday,
+                    current_minutes: currentMinutes,
+                    market_start: marketStartMinutes,
+                    market_end: marketEndMinutes
+                  }
                 });
             } catch (logError) {
-              console.warn('Failed to log market error:', logError);
+              console.warn('Failed to log market status:', logError);
             }
+          } catch (e) {
+            const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+            console.log('Market status calculation failed:', errorMessage);
+            // Default to market closed if calculation fails
+            marketOpen = false;
           }
 
           try {
