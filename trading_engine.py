@@ -276,15 +276,21 @@ class ImprovedTradingEngine:
         # Calculate SMA
         sma_value = self._calculate_sma(candles, self.SMA_PERIOD)
         
-        # Check for 10 AM setup - only check the 9:57-10:00 candle
-        setup_start = time(9, 57)
-        setup_end = time(10, 0)
+        # Check for 10 AM setup - more flexible timing check
         current_candle_time = latest_candle.timestamp.time()
-
-        # Only check setup if we're processing the 10:00 AM candle (9:57-10:00)
-        if (current_candle_time >= setup_end and 
-            current_candle_time <= time(10, 3) and  # Small buffer for candle completion
+        current_hour = current_candle_time.hour
+        current_minute = current_candle_time.minute
+        
+        # Log current candle time for debugging
+        self._log(symbol, "CANDLE_TIME", f"Processing candle at {current_candle_time.strftime('%H:%M:%S')}")
+        
+        # Check for 10 AM setup (accept any candle between 9:57-10:05 for setup)
+        setup_window_start = time(9, 57)
+        setup_window_end = time(10, 5)
+        
+        if (setup_window_start <= current_candle_time <= setup_window_end and 
             state.bias is None):
+            self._log(symbol, "SETUP_CHECK", f"Checking setup for {current_candle_time.strftime('%H:%M:%S')} candle")
             await self._check_setup(symbol, state, latest_candle, sma_value)
         
         # Check for rejection candle
@@ -314,6 +320,8 @@ class ImprovedTradingEngine:
     async def _check_setup(self, symbol: str, state: StrategyState, candle: CandleData, sma_value: float):
         """Check for valid 10 AM setup"""
         setup_time = candle.timestamp.strftime("%I:%M %p")  # Format time as 10:00 AM
+        
+        self._log(symbol, "SETUP_ANALYSIS", f"Analyzing setup at {setup_time}: Candle {candle.low:.2f}-{candle.high:.2f}, SMA: {sma_value:.2f}")
         
         # Check if entire candle is above SMA (Long setup)
         if candle.low > sma_value:
