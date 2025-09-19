@@ -112,11 +112,17 @@ export function TradingLogs({
 
   const formatTimestamp = (timestamp: string) => {
     // Convert UTC timestamp to IST (Indian Standard Time)
-    return formatInTimeZone(
-      new Date(timestamp), 
-      'Asia/Kolkata', 
-      'HH:mm:ss'
-    );
+    try {
+      return formatInTimeZone(
+        new Date(timestamp), 
+        'Asia/Kolkata', 
+        'hh:mm a'
+      );
+    } catch (error) {
+      console.error('Error formatting timestamp:', error);
+      // Fallback to basic format
+      return format(new Date(timestamp), 'hh:mm a');
+    }
   };
 
   const displayLogs = activityLogs.length > 0 ? activityLogs : logs;

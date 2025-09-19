@@ -1013,16 +1013,22 @@ serve(async (req) => {
           });
         }
         
-        // Highlight setup detection logs
-        const processedLogs = (activityLogs || []).map(log => ({
-          ...log,
-          is_setup_detection: log.event_type === 'SETUP_DETECTION',
-          formatted_time: new Date(log.created_at).toLocaleTimeString('en-US', {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: true
-          })
-        }));
+        // Highlight setup detection logs and format times in IST
+        const processedLogs = (activityLogs || []).map(log => {
+          const utcDate = new Date(log.created_at);
+          // Convert UTC to IST (UTC+5:30)
+          const istDate = new Date(utcDate.getTime() + (5.5 * 60 * 60 * 1000));
+          
+          return {
+            ...log,
+            is_setup_detection: log.event_type === 'SETUP_DETECTION',
+            formatted_time: istDate.toLocaleTimeString('en-US', {
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: true
+            })
+          };
+        });
         
         return new Response(JSON.stringify({
           status: 'success',
