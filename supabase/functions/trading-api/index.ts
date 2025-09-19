@@ -163,6 +163,7 @@ serve(async (req) => {
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
+        break;
 
       case '/set_credentials':
         const { api_key, api_secret } = requestData;
@@ -203,6 +204,7 @@ serve(async (req) => {
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
+        break;
 
       case '/login':
         const { request_token } = requestData;
@@ -297,19 +299,9 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
+        break;
 
-      case '/test':
-        // Simple connectivity test - no authentication required
-        return new Response(JSON.stringify({
-          status: 'success',
-          message: 'Edge function is working',
-          data: { 
-            server_time: new Date().toISOString(),
-            status: 'connected'
-          }
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+      // Remove duplicate test case - already exists above
 
       case '/test_connection':
         // Check if we have valid session
@@ -375,6 +367,7 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
+        break;
 
       case '/live_status':
         try {
@@ -670,6 +663,7 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
+        break;
 
       case '/get_balance':
         // Get session data
@@ -732,6 +726,7 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
+        break;
 
       case '/instruments':
         // Get session data
@@ -856,6 +851,7 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
+        break;
 
       case '/start_live_trading':
         try {
@@ -911,6 +907,7 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
+        break;
 
       case '/stop_live_trading':
         try {
@@ -954,6 +951,7 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
+        break;
 
       case '/update_settings':
         return new Response(JSON.stringify({
@@ -962,6 +960,7 @@ serve(async (req) => {
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
+        break;
 
       case '/get_performance':
         return new Response(JSON.stringify({
@@ -979,6 +978,7 @@ serve(async (req) => {
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
+        break;
 
       case '/get_activity_logs':
         const { limit, event_type } = requestData;
@@ -1031,6 +1031,7 @@ serve(async (req) => {
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
+        break;
 
       case '/log_setup_detection':
         try {
@@ -1122,6 +1123,7 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
+        break;
 
       case '/place_test_order':
         try {
@@ -1216,6 +1218,7 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
+        break;
 
       default:
         return new Response(JSON.stringify({
